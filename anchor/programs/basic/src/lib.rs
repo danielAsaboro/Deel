@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use anchor_lang::system_program::{transfer, Transfer};
 use anchor_spl::{
     associated_token::AssociatedToken,
     metadata::{
@@ -8,7 +9,7 @@ use anchor_spl::{
     token::{mint_to, Mint, MintTo, Token, TokenAccount},
 };
 
-declare_id!("JAVuBXeBZqXNtS73azhBDAoYaaAFfo4gWXoZe2e7Jf8H");
+declare_id!("GUudyUKazJCyL2f7dTG6Nm7EgUsro3acDtbbMWFuUrRd");
 
 #[program]
 pub mod basic {
@@ -39,6 +40,8 @@ pub mod basic {
         deal.category = category;
         deal.price_lamports = price_lamports;
         deal.is_active = true;
+        deal.total_ratings = 0;
+        deal.rating_sum = 0;
         deal.bump = ctx.bumps.deal;
 
         msg!("Deal created: {}", deal.title);
@@ -64,12 +67,24 @@ pub mod basic {
         Ok(())
     }
 
-    pub fn mint_coupon(ctx: Context<MintCoupon>, deal_id: Pubkey) -> Result<()> {
+    pub fn mint_coupon(ctx: Context<MintCoupon>, deal_id: Pubkey, metadata_uri: String) -> Result<()> {
         let deal = &mut ctx.accounts.deal;
 
         require!(deal.is_active, DealError::DealInactive);
         require!(deal.current_supply < deal.max_supply, DealError::MaxSupplyReached);
         require!(Clock::get()?.unix_timestamp < deal.expiry_timestamp, DealError::DealExpired);
+
+        // Transfer payment from user to merchant
+        if deal.price_lamports > 0 {
+            let transfer_ctx = CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.user.to_account_info(),
+                    to: ctx.accounts.merchant.to_account_info(),
+                },
+            );
+            transfer(transfer_ctx, deal.price_lamports)?;
+        }
 
         // Mint NFT to user
         let cpi_context = CpiContext::new(
@@ -83,11 +98,11 @@ pub mod basic {
 
         mint_to(cpi_context, 1)?;
 
-        // Create metadata
+        // Create metadata with provided IPFS URI
         let data = DataV2 {
-            name: format!("{} - Coupon", deal.title),
+            name: format!("{} - Coupon #{}", deal.title, deal.current_supply + 1),
             symbol: "DEAL".to_string(),
-            uri: format!("https://api.deal.com/metadata/{}", deal_id),
+            uri: metadata_uri,
             seller_fee_basis_points: 0,
             creators: None,
             collection: None,
@@ -148,6 +163,41 @@ pub mod basic {
         coupon.owner = ctx.accounts.new_owner.key();
 
         msg!("Coupon transferred to new owner");
+        Ok(())
+    }
+
+    pub fn rate_deal(ctx: Context<RateDeal>, rating: u8) -> Result<()> {
+        require!(rating >= 1 && rating <= 5, DealError::InvalidRating);
+
+        let deal = &mut ctx.accounts.deal;
+        let deal_rating = &mut ctx.accounts.deal_rating;
+
+        // If this is a new rating (account just initialized)
+        deal.total_ratings += 1;
+        deal.rating_sum += rating as u64;
+
+        // Store the user's rating
+        deal_rating.deal = deal.key();
+        deal_rating.user = ctx.accounts.user.key();
+        deal_rating.rating = rating;
+        deal_rating.created_at = Clock::get()?.unix_timestamp;
+        deal_rating.bump = ctx.bumps.deal_rating;
+
+        msg!("Deal rated: {} stars", rating);
+        Ok(())
+    }
+
+    pub fn add_comment(ctx: Context<AddComment>, timestamp: i64, content: String) -> Result<()> {
+        require!(content.len() <= 500, DealError::CommentTooLong);
+
+        let comment = &mut ctx.accounts.comment;
+        comment.deal = ctx.accounts.deal.key();
+        comment.author = ctx.accounts.author.key();
+        comment.content = content;
+        comment.created_at = timestamp;
+        comment.bump = ctx.bumps.comment;
+
+        msg!("Comment added to deal");
         Ok(())
     }
 }
@@ -217,6 +267,13 @@ pub struct MintCoupon<'info> {
     #[account(mut)]
     pub metadata: UncheckedAccount<'info>,
 
+    /// CHECK: Merchant account to receive payment
+    #[account(
+        mut,
+        constraint = merchant.key() == deal.merchant @ DealError::UnauthorizedMerchant
+    )]
+    pub merchant: UncheckedAccount<'info>,
+
     #[account(mut)]
     pub user: Signer<'info>,
 
@@ -248,6 +305,46 @@ pub struct TransferCoupon<'info> {
     pub new_owner: UncheckedAccount<'info>,
 }
 
+#[derive(Accounts)]
+pub struct RateDeal<'info> {
+    #[account(mut)]
+    pub deal: Account<'info, Deal>,
+
+    #[account(
+        init_if_needed,
+        payer = user,
+        space = 8 + DealRating::INIT_SPACE,
+        seeds = [b"rating", deal.key().as_ref(), user.key().as_ref()],
+        bump
+    )]
+    pub deal_rating: Account<'info, DealRating>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(timestamp: i64)]
+pub struct AddComment<'info> {
+    pub deal: Account<'info, Deal>,
+
+    #[account(
+        init,
+        payer = author,
+        space = 8 + Comment::INIT_SPACE,
+        seeds = [b"comment", deal.key().as_ref(), author.key().as_ref(), &timestamp.to_le_bytes()],
+        bump
+    )]
+    pub comment: Account<'info, Comment>,
+
+    #[account(mut)]
+    pub author: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
 #[account]
 #[derive(InitSpace)]
 pub struct Deal {
@@ -264,6 +361,8 @@ pub struct Deal {
     pub category: String,
     pub price_lamports: u64,
     pub is_active: bool,
+    pub total_ratings: u64,
+    pub rating_sum: u64,
     pub bump: u8,
 }
 
@@ -276,6 +375,27 @@ pub struct Coupon {
     pub is_redeemed: bool,
     pub minted_at: i64,
     pub redeemed_at: Option<i64>,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct DealRating {
+    pub deal: Pubkey,
+    pub user: Pubkey,
+    pub rating: u8, // 1-5 stars
+    pub created_at: i64,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct Comment {
+    pub deal: Pubkey,
+    pub author: Pubkey,
+    #[max_len(500)]
+    pub content: String,
+    pub created_at: i64,
     pub bump: u8,
 }
 
@@ -299,4 +419,8 @@ pub enum DealError {
     NotOwner,
     #[msg("Unauthorized merchant")]
     UnauthorizedMerchant,
+    #[msg("Invalid rating value (must be 1-5)")]
+    InvalidRating,
+    #[msg("Comment too long")]
+    CommentTooLong,
 }

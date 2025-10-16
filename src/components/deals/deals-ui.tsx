@@ -2,7 +2,7 @@
 
 import { PublicKey } from '@solana/web3.js'
 import { useState } from 'react'
-import { useDealsProgram, Deal } from './deals-data-access'
+import { useDealsProgram, Deal, useExternalDeals } from './deals-data-access'
 import { Button } from '../ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../ui/card'
 import { Input } from '../ui/input'
@@ -10,7 +10,10 @@ import { Label } from '../ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { Badge } from '../ui/badge'
-import { Calendar, Tag, TrendingDown, Package } from 'lucide-react'
+import { Calendar, Tag, TrendingDown, Package, ExternalLink, Globe, Star, MessageCircle, Share2 } from 'lucide-react'
+import { ExternalDeal } from '@/types/external-deals'
+import { Textarea } from '../ui/textarea'
+import { toast } from 'sonner'
 
 export function DealsCreate() {
   const { createDeal } = useDealsProgram()
@@ -132,14 +135,69 @@ export function DealsCreate() {
   )
 }
 
+// Star rating component
+function StarRating({ value, onChange, readonly = false }: { value: number; onChange?: (rating: number) => void; readonly?: boolean }) {
+  return (
+    <div className="flex gap-1">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <button
+          key={star}
+          type="button"
+          onClick={() => !readonly && onChange?.(star)}
+          disabled={readonly}
+          className={readonly ? 'cursor-default' : 'cursor-pointer hover:scale-110 transition-transform'}
+        >
+          <Star
+            className={`h-4 w-4 ${star <= value ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'}`}
+          />
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function DealCard({ deal }: { deal: Deal }) {
-  const { mintCoupon, updateDeal } = useDealsProgram()
+  const { mintCoupon, updateDeal, rateDeal, addComment, useCommentsByDeal } = useDealsProgram()
   const { publicKey } = useWallet()
   const isMerchant = publicKey && deal.merchant.equals(publicKey)
+  const [showComments, setShowComments] = useState(false)
+  const [newComment, setNewComment] = useState('')
+  const [userRating, setUserRating] = useState(0)
+
+  const comments = useCommentsByDeal(deal.publicKey)
 
   const expiryDate = new Date(deal.expiryTimestamp.toNumber() * 1000)
   const isExpired = expiryDate < new Date()
   const supplyPercent = (deal.currentSupply.toNumber() / deal.maxSupply.toNumber()) * 100
+
+  // Calculate average rating
+  const averageRating = deal.totalRatings.toNumber() > 0
+    ? deal.ratingSum.toNumber() / deal.totalRatings.toNumber()
+    : 0
+
+  const handleRate = async (rating: number) => {
+    setUserRating(rating)
+    await rateDeal.mutateAsync({ dealAddress: deal.publicKey, rating })
+  }
+
+  const handleAddComment = async () => {
+    if (!newComment.trim()) return
+    await addComment.mutateAsync({ dealAddress: deal.publicKey, content: newComment })
+    setNewComment('')
+    comments.refetch()
+  }
+
+  const handleShare = (platform: 'twitter' | 'copy') => {
+    const url = `${window.location.origin}/deals/${deal.publicKey.toString()}`
+    const text = `Check out this deal: ${deal.title} - ${deal.discountPercent}% OFF!`
+
+    if (platform === 'twitter') {
+      window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, '_blank')
+    } else {
+      navigator.clipboard.writeText(url)
+      toast('Link copied to clipboard!')
+    }
+  }
 
   return (
     <Card className="overflow-hidden">
@@ -166,6 +224,22 @@ export function DealCard({ deal }: { deal: Deal }) {
           </div>
         </div>
 
+        {/* Rating Section */}
+        <div className="flex items-center justify-between border-y py-2">
+          <div className="flex items-center gap-2">
+            <StarRating value={Math.round(averageRating)} readonly />
+            <span className="text-sm text-muted-foreground">
+              {averageRating > 0 ? `${averageRating.toFixed(1)} (${deal.totalRatings.toString()})` : 'No ratings yet'}
+            </span>
+          </div>
+          {publicKey && !isMerchant && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Rate:</span>
+              <StarRating value={userRating} onChange={handleRate} />
+            </div>
+          )}
+        </div>
+
         <div className="flex items-center justify-between text-sm">
           <div className="flex items-center gap-1.5">
             <Package className="h-4 w-4" />
@@ -188,9 +262,53 @@ export function DealCard({ deal }: { deal: Deal }) {
           />
         </div>
 
-        <div className="text-sm font-medium">
-          Price: {(deal.priceLamports.toNumber() / 1e9).toFixed(4)} SOL
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-medium">
+            Price: {(deal.priceLamports.toNumber() / 1e9).toFixed(4)} SOL
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="ghost" onClick={() => setShowComments(!showComments)}>
+              <MessageCircle className="h-4 w-4 mr-1" />
+              {comments.data?.length || 0}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => handleShare('twitter')}>
+              <Share2 className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
+
+        {/* Comments Section */}
+        {showComments && (
+          <div className="space-y-3 pt-3 border-t">
+            <div className="space-y-2 max-h-40 overflow-y-auto">
+              {comments.data?.map((comment) => (
+                <div key={comment.publicKey.toString()} className="text-sm p-2 bg-secondary rounded">
+                  <div className="font-medium text-xs text-muted-foreground mb-1">
+                    {comment.author.toString().slice(0, 8)}... • {new Date(comment.createdAt.toNumber() * 1000).toLocaleDateString()}
+                  </div>
+                  <div>{comment.content}</div>
+                </div>
+              ))}
+              {(!comments.data || comments.data.length === 0) && (
+                <div className="text-sm text-muted-foreground text-center py-2">No comments yet</div>
+              )}
+            </div>
+            {publicKey && (
+              <div className="flex gap-2">
+                <Textarea
+                  placeholder="Add a comment..."
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  className="min-h-[60px]"
+                  maxLength={500}
+                />
+                <Button size="sm" onClick={handleAddComment} disabled={addComment.isPending || !newComment.trim()}>
+                  {addComment.isPending ? 'Posting...' : 'Post'}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
       </CardContent>
       <CardFooter className="gap-2">
         {isMerchant ? (
@@ -228,9 +346,171 @@ export function DealCard({ deal }: { deal: Deal }) {
   )
 }
 
+// External Deal Card Component
+export function ExternalDealCard({ deal }: { deal: ExternalDeal }) {
+  const { createDeal } = useDealsProgram()
+  const { publicKey } = useWallet()
+  const [showImportDialog, setShowImportDialog] = useState(false)
+  const [maxSupply, setMaxSupply] = useState(100)
+  const [expiryDays, setExpiryDays] = useState(30)
+  const [priceLamports, setPriceLamports] = useState(100000000) // 0.1 SOL
+
+  const handleImport = async () => {
+    const expiryTimestamp = Math.floor(Date.now() / 1000) + expiryDays * 24 * 60 * 60
+    await createDeal.mutateAsync({
+      title: deal.title,
+      description: deal.description,
+      discountPercent: deal.discountPercent,
+      maxSupply,
+      expiryTimestamp,
+      category: deal.category,
+      priceLamports,
+    })
+    setShowImportDialog(false)
+    toast('Deal imported to blockchain successfully!')
+  }
+
+  return (
+    <>
+      <Card className="overflow-hidden">
+        <CardHeader className="pb-3">
+          <div className="flex items-start justify-between">
+            <div className="space-y-1 flex-1">
+              <div className="flex items-center gap-2">
+                <Globe className="h-4 w-4 text-muted-foreground" />
+                <CardTitle className="text-lg line-clamp-1">{deal.title}</CardTitle>
+              </div>
+              <CardDescription className="line-clamp-2">{deal.description}</CardDescription>
+            </div>
+            <Badge variant="secondary">
+              <ExternalLink className="h-3 w-3 mr-1" />
+              {deal.source}
+            </Badge>
+          </div>
+        </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center gap-4 text-sm">
+          <div className="flex items-center gap-1.5">
+            <TrendingDown className="h-4 w-4 text-green-500" />
+            <span className="font-bold text-green-500">{deal.discountPercent}% OFF</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Tag className="h-4 w-4" />
+            <span className="capitalize">{deal.category}</span>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between text-sm">
+          <div>
+            <span className="line-through text-muted-foreground">
+              {deal.currency} {deal.originalPrice.toFixed(2)}
+            </span>
+            <span className="ml-2 font-bold text-lg">
+              {deal.currency} {deal.discountedPrice.toFixed(2)}
+            </span>
+          </div>
+        </div>
+
+        {deal.location && (
+          <div className="text-sm text-muted-foreground">{deal.location}</div>
+        )}
+
+        {deal.imageUrl && (
+          <div className="w-full h-32 bg-muted rounded-md overflow-hidden">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={deal.imageUrl}
+              alt={deal.title}
+              className="w-full h-full object-cover"
+            />
+          </div>
+        )}
+      </CardContent>
+      <CardFooter className="gap-2">
+        {deal.externalUrl && (
+          <Button size="sm" variant="outline" asChild className="flex-1">
+            <a href={deal.externalUrl} target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="h-4 w-4 mr-1" />
+              View Deal
+            </a>
+          </Button>
+        )}
+        <Button
+          size="sm"
+          variant="secondary"
+          className="flex-1"
+          onClick={() => setShowImportDialog(true)}
+          disabled={!publicKey}
+        >
+          Import to Blockchain
+        </Button>
+      </CardFooter>
+    </Card>
+
+    {/* Import Dialog */}
+    <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Import Deal to Blockchain</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="text-sm text-muted-foreground">
+            Convert this external deal into an on-chain NFT coupon deal. Customize parameters below:
+          </div>
+          <div>
+            <Label htmlFor="supply">Max NFT Supply</Label>
+            <Input
+              id="supply"
+              type="number"
+              value={maxSupply}
+              onChange={(e) => setMaxSupply(Number(e.target.value))}
+              min="1"
+            />
+          </div>
+          <div>
+            <Label htmlFor="price">Coupon Price (lamports)</Label>
+            <Input
+              id="price"
+              type="number"
+              value={priceLamports}
+              onChange={(e) => setPriceLamports(Number(e.target.value))}
+              min="0"
+            />
+            <div className="text-xs text-muted-foreground mt-1">
+              {(priceLamports / 1e9).toFixed(4)} SOL
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="expiry">Expires in (days)</Label>
+            <Input
+              id="expiry"
+              type="number"
+              value={expiryDays}
+              onChange={(e) => setExpiryDays(Number(e.target.value))}
+              min="1"
+            />
+          </div>
+          <Button
+            onClick={handleImport}
+            disabled={createDeal.isPending}
+            className="w-full"
+          >
+            {createDeal.isPending ? 'Importing...' : 'Import to Blockchain'}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
+  )
+}
+
 export function DealsList() {
   const { deals } = useDealsProgram()
   const [filter, setFilter] = useState<'all' | 'active' | 'expired'>('active')
+  const [category, setCategory] = useState<'all' | 'flights' | 'hotels' | 'shopping' | 'restaurants'>('all')
+  const [showExternal, setShowExternal] = useState(true)
+
+  const externalDeals = useExternalDeals(category === 'all' ? undefined : category)
 
   const filteredDeals = deals.data?.filter((deal) => {
     if (filter === 'active') {
@@ -245,45 +525,130 @@ export function DealsList() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center justify-between">
+          <div className="flex gap-2">
+            <Button
+              variant={filter === 'all' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFilter('all')}
+            >
+              All
+            </Button>
+            <Button
+              variant={filter === 'active' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFilter('active')}
+            >
+              Active
+            </Button>
+            <Button
+              variant={filter === 'expired' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFilter('expired')}
+            >
+              Expired
+            </Button>
+          </div>
+          <Button
+            variant={showExternal ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setShowExternal(!showExternal)}
+          >
+            <Globe className="h-4 w-4 mr-2" />
+            External Deals
+          </Button>
+        </div>
+
         <div className="flex gap-2">
           <Button
-            variant={filter === 'all' ? 'default' : 'outline'}
+            variant={category === 'all' ? 'default' : 'outline'}
             size="sm"
-            onClick={() => setFilter('all')}
+            onClick={() => setCategory('all')}
           >
-            All
+            All Categories
           </Button>
           <Button
-            variant={filter === 'active' ? 'default' : 'outline'}
+            variant={category === 'flights' ? 'default' : 'outline'}
             size="sm"
-            onClick={() => setFilter('active')}
+            onClick={() => setCategory('flights')}
           >
-            Active
+            Flights
           </Button>
           <Button
-            variant={filter === 'expired' ? 'default' : 'outline'}
+            variant={category === 'hotels' ? 'default' : 'outline'}
             size="sm"
-            onClick={() => setFilter('expired')}
+            onClick={() => setCategory('hotels')}
           >
-            Expired
+            Hotels
+          </Button>
+          <Button
+            variant={category === 'shopping' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setCategory('shopping')}
+          >
+            Shopping
+          </Button>
+          <Button
+            variant={category === 'restaurants' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setCategory('restaurants')}
+          >
+            Restaurants
           </Button>
         </div>
       </div>
 
-      {deals.isLoading ? (
-        <div className="text-center py-8">Loading deals...</div>
-      ) : filteredDeals && filteredDeals.length > 0 ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filteredDeals.map((deal) => (
-            <DealCard key={deal.publicKey.toString()} deal={deal} />
-          ))}
-        </div>
-      ) : (
-        <div className="text-center py-8">
-          <p className="text-muted-foreground">No deals found</p>
+      {/* External Deals Section */}
+      {showExternal && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold">Live Deal Feed</h3>
+            {externalDeals.data && (
+              <Badge variant="outline">
+                {externalDeals.data.deals.length} deals from{' '}
+                {Object.values(externalDeals.data.sources).reduce(
+                  (acc, source) => acc + Object.values(source).reduce((a, b) => a + b, 0),
+                  0
+                )}{' '}
+                sources
+              </Badge>
+            )}
+          </div>
+
+          {externalDeals.isLoading ? (
+            <div className="text-center py-8">Loading external deals...</div>
+          ) : externalDeals.data && externalDeals.data.deals.length > 0 ? (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {externalDeals.data.deals.map((deal) => (
+                <ExternalDealCard key={deal.id} deal={deal} />
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">No external deals found</p>
+            </div>
+          )}
         </div>
       )}
+
+      {/* On-chain Deals Section */}
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold">Blockchain Deals</h3>
+        {deals.isLoading ? (
+          <div className="text-center py-8">Loading deals...</div>
+        ) : filteredDeals && filteredDeals.length > 0 ? (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {filteredDeals.map((deal) => (
+              <DealCard key={deal.publicKey.toString()} deal={deal} />
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8">
+            <p className="text-muted-foreground">No blockchain deals found</p>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

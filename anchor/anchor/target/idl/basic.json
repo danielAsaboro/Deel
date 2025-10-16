@@ -1,10 +1,4 @@
-/**
- * Program IDL in camelCase format in order to be used in JS/TS.
- *
- * Note that this is only a type helper and is not the actual IDL. The original
- * IDL can be found at `target/idl/basic.json`.
- */
-export type Basic = {
+{
   "address": "GUudyUKazJCyL2f7dTG6Nm7EgUsro3acDtbbMWFuUrRd",
   "metadata": {
     "name": "basic",
@@ -14,76 +8,7 @@ export type Basic = {
   },
   "instructions": [
     {
-      "name": "addComment",
-      "discriminator": [
-        59,
-        175,
-        193,
-        236,
-        134,
-        214,
-        75,
-        141
-      ],
-      "accounts": [
-        {
-          "name": "deal"
-        },
-        {
-          "name": "comment",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  111,
-                  109,
-                  109,
-                  101,
-                  110,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "deal"
-              },
-              {
-                "kind": "account",
-                "path": "author"
-              },
-              {
-                "kind": "arg",
-                "path": "timestamp"
-              }
-            ]
-          }
-        },
-        {
-          "name": "author",
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "systemProgram",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "timestamp",
-          "type": "i64"
-        },
-        {
-          "name": "content",
-          "type": "string"
-        }
-      ]
-    },
-    {
-      "name": "createDeal",
+      "name": "create_deal",
       "discriminator": [
         198,
         212,
@@ -126,7 +51,7 @@ export type Basic = {
           "signer": true
         },
         {
-          "name": "systemProgram",
+          "name": "system_program",
           "address": "11111111111111111111111111111111"
         }
       ],
@@ -140,15 +65,15 @@ export type Basic = {
           "type": "string"
         },
         {
-          "name": "discountPercent",
+          "name": "discount_percent",
           "type": "u8"
         },
         {
-          "name": "maxSupply",
+          "name": "max_supply",
           "type": "u64"
         },
         {
-          "name": "expiryTimestamp",
+          "name": "expiry_timestamp",
           "type": "i64"
         },
         {
@@ -156,13 +81,13 @@ export type Basic = {
           "type": "string"
         },
         {
-          "name": "priceLamports",
+          "name": "price_lamports",
           "type": "u64"
         }
       ]
     },
     {
-      "name": "mintCoupon",
+      "name": "mint_coupon",
       "discriminator": [
         190,
         110,
@@ -201,7 +126,7 @@ export type Basic = {
               {
                 "kind": "account",
                 "path": "deal.current_supply",
-                "account": "deal"
+                "account": "Deal"
               }
             ]
           }
@@ -212,7 +137,7 @@ export type Basic = {
           "signer": true
         },
         {
-          "name": "tokenAccount",
+          "name": "token_account",
           "writable": true,
           "pda": {
             "seeds": [
@@ -319,96 +244,31 @@ export type Basic = {
           "address": "SysvarRent111111111111111111111111111111111"
         },
         {
-          "name": "systemProgram",
+          "name": "system_program",
           "address": "11111111111111111111111111111111"
         },
         {
-          "name": "tokenProgram",
+          "name": "token_program",
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         },
         {
-          "name": "associatedTokenProgram",
+          "name": "associated_token_program",
           "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
         },
         {
-          "name": "tokenMetadataProgram",
+          "name": "token_metadata_program",
           "address": "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
         }
       ],
       "args": [
         {
-          "name": "dealId",
+          "name": "deal_id",
           "type": "pubkey"
-        },
-        {
-          "name": "metadataUri",
-          "type": "string"
         }
       ]
     },
     {
-      "name": "rateDeal",
-      "discriminator": [
-        193,
-        82,
-        126,
-        41,
-        197,
-        81,
-        244,
-        3
-      ],
-      "accounts": [
-        {
-          "name": "deal",
-          "writable": true
-        },
-        {
-          "name": "dealRating",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  114,
-                  97,
-                  116,
-                  105,
-                  110,
-                  103
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "deal"
-              },
-              {
-                "kind": "account",
-                "path": "user"
-              }
-            ]
-          }
-        },
-        {
-          "name": "user",
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "systemProgram",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "rating",
-          "type": "u8"
-        }
-      ]
-    },
-    {
-      "name": "redeemCoupon",
+      "name": "redeem_coupon",
       "discriminator": [
         66,
         181,
@@ -435,7 +295,7 @@ export type Basic = {
       "args": []
     },
     {
-      "name": "transferCoupon",
+      "name": "transfer_coupon",
       "discriminator": [
         144,
         38,
@@ -452,17 +312,17 @@ export type Basic = {
           "writable": true
         },
         {
-          "name": "currentOwner",
+          "name": "current_owner",
           "signer": true
         },
         {
-          "name": "newOwner"
+          "name": "new_owner"
         }
       ],
       "args": []
     },
     {
-      "name": "updateDeal",
+      "name": "update_deal",
       "discriminator": [
         244,
         195,
@@ -488,13 +348,13 @@ export type Basic = {
       ],
       "args": [
         {
-          "name": "isActive",
+          "name": "is_active",
           "type": {
             "option": "bool"
           }
         },
         {
-          "name": "priceLamports",
+          "name": "price_lamports",
           "type": {
             "option": "u64"
           }
@@ -504,20 +364,7 @@ export type Basic = {
   ],
   "accounts": [
     {
-      "name": "comment",
-      "discriminator": [
-        150,
-        135,
-        96,
-        244,
-        55,
-        199,
-        50,
-        65
-      ]
-    },
-    {
-      "name": "coupon",
+      "name": "Coupon",
       "discriminator": [
         24,
         230,
@@ -530,7 +377,7 @@ export type Basic = {
       ]
     },
     {
-      "name": "deal",
+      "name": "Deal",
       "discriminator": [
         125,
         223,
@@ -541,109 +388,58 @@ export type Basic = {
         182,
         219
       ]
-    },
-    {
-      "name": "dealRating",
-      "discriminator": [
-        123,
-        212,
-        42,
-        230,
-        61,
-        42,
-        190,
-        167
-      ]
     }
   ],
   "errors": [
     {
       "code": 6000,
-      "name": "invalidDiscount",
+      "name": "InvalidDiscount",
       "msg": "Invalid discount percentage"
     },
     {
       "code": 6001,
-      "name": "invalidSupply",
+      "name": "InvalidSupply",
       "msg": "Invalid supply amount"
     },
     {
       "code": 6002,
-      "name": "invalidExpiry",
+      "name": "InvalidExpiry",
       "msg": "Invalid expiry timestamp"
     },
     {
       "code": 6003,
-      "name": "dealInactive",
+      "name": "DealInactive",
       "msg": "Deal is not active"
     },
     {
       "code": 6004,
-      "name": "maxSupplyReached",
+      "name": "MaxSupplyReached",
       "msg": "Maximum supply reached"
     },
     {
       "code": 6005,
-      "name": "dealExpired",
+      "name": "DealExpired",
       "msg": "Deal has expired"
     },
     {
       "code": 6006,
-      "name": "alreadyRedeemed",
+      "name": "AlreadyRedeemed",
       "msg": "Coupon already redeemed"
     },
     {
       "code": 6007,
-      "name": "notOwner",
+      "name": "NotOwner",
       "msg": "Not the owner of this coupon"
     },
     {
       "code": 6008,
-      "name": "unauthorizedMerchant",
+      "name": "UnauthorizedMerchant",
       "msg": "Unauthorized merchant"
-    },
-    {
-      "code": 6009,
-      "name": "invalidRating",
-      "msg": "Invalid rating value (must be 1-5)"
-    },
-    {
-      "code": 6010,
-      "name": "commentTooLong",
-      "msg": "Comment too long"
     }
   ],
   "types": [
     {
-      "name": "comment",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "deal",
-            "type": "pubkey"
-          },
-          {
-            "name": "author",
-            "type": "pubkey"
-          },
-          {
-            "name": "content",
-            "type": "string"
-          },
-          {
-            "name": "createdAt",
-            "type": "i64"
-          },
-          {
-            "name": "bump",
-            "type": "u8"
-          }
-        ]
-      }
-    },
-    {
-      "name": "coupon",
+      "name": "Coupon",
       "type": {
         "kind": "struct",
         "fields": [
@@ -660,15 +456,15 @@ export type Basic = {
             "type": "pubkey"
           },
           {
-            "name": "isRedeemed",
+            "name": "is_redeemed",
             "type": "bool"
           },
           {
-            "name": "mintedAt",
+            "name": "minted_at",
             "type": "i64"
           },
           {
-            "name": "redeemedAt",
+            "name": "redeemed_at",
             "type": {
               "option": "i64"
             }
@@ -681,7 +477,7 @@ export type Basic = {
       }
     },
     {
-      "name": "deal",
+      "name": "Deal",
       "type": {
         "kind": "struct",
         "fields": [
@@ -698,19 +494,19 @@ export type Basic = {
             "type": "string"
           },
           {
-            "name": "discountPercent",
+            "name": "discount_percent",
             "type": "u8"
           },
           {
-            "name": "maxSupply",
+            "name": "max_supply",
             "type": "u64"
           },
           {
-            "name": "currentSupply",
+            "name": "current_supply",
             "type": "u64"
           },
           {
-            "name": "expiryTimestamp",
+            "name": "expiry_timestamp",
             "type": "i64"
           },
           {
@@ -718,48 +514,12 @@ export type Basic = {
             "type": "string"
           },
           {
-            "name": "priceLamports",
+            "name": "price_lamports",
             "type": "u64"
           },
           {
-            "name": "isActive",
+            "name": "is_active",
             "type": "bool"
-          },
-          {
-            "name": "totalRatings",
-            "type": "u64"
-          },
-          {
-            "name": "ratingSum",
-            "type": "u64"
-          },
-          {
-            "name": "bump",
-            "type": "u8"
-          }
-        ]
-      }
-    },
-    {
-      "name": "dealRating",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "deal",
-            "type": "pubkey"
-          },
-          {
-            "name": "user",
-            "type": "pubkey"
-          },
-          {
-            "name": "rating",
-            "type": "u8"
-          },
-          {
-            "name": "createdAt",
-            "type": "i64"
           },
           {
             "name": "bump",
@@ -769,4 +529,4 @@ export type Basic = {
       }
     }
   ]
-};
+}

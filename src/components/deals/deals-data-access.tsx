@@ -2,7 +2,7 @@
 
 import { getBasicProgram, getBasicProgramId } from '@project/anchor'
 import { useWallet } from '@solana/wallet-adapter-react'
-import { Cluster, PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js'
+import { Cluster, Keypair, PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { useCluster } from '../cluster/cluster-data-access'
@@ -10,6 +10,13 @@ import { useAnchorProvider } from '../solana/solana-provider'
 import { useTransactionToast } from '../use-transaction-toast'
 import { toast } from 'sonner'
 import { BN } from '@coral-xyz/anchor'
+import {
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
+  getAssociatedTokenAddressSync
+} from '@solana/spl-token'
+import { ExternalDealsResponse } from '@/types/external-deals'
+import { generateCouponMetadata, uploadMetadataToIPFS } from '@/lib/metadata-upload'
 
 export interface Deal {
   publicKey: PublicKey
@@ -23,6 +30,24 @@ export interface Deal {
   category: string
   priceLamports: BN
   isActive: boolean
+  totalRatings: BN
+  ratingSum: BN
+}
+
+export interface DealRating {
+  publicKey: PublicKey
+  deal: PublicKey
+  user: PublicKey
+  rating: number
+  createdAt: BN
+}
+
+export interface Comment {
+  publicKey: PublicKey
+  deal: PublicKey
+  author: PublicKey
+  content: string
+  createdAt: BN
 }
 
 export function useDealsProgram() {
@@ -163,17 +188,73 @@ export function useDealsProgram() {
     mutationFn: async ({ dealAddress }: { dealAddress: PublicKey }) => {
       if (!publicKey) throw new Error('Wallet not connected')
 
-      // Note: This is a simplified version. The full implementation requires:
-      // 1. Generating a new mint keypair
-      // 2. Setting up token accounts properly
-      // 3. Handling metadata creation with proper PDAs
-      // For now, this will fail at runtime but demonstrates the structure
+      // Get the deal account to read current_supply
+      const dealAccount = await program.account.deal.fetch(dealAddress)
+
+      // Generate metadata and upload to IPFS
+      const metadata = generateCouponMetadata(
+        {
+          title: dealAccount.title,
+          description: dealAccount.description,
+          discountPercent: dealAccount.discountPercent,
+          merchant: dealAccount.merchant.toString(),
+          expiryTimestamp: dealAccount.expiryTimestamp.toNumber(),
+          category: dealAccount.category,
+        },
+        dealAccount.currentSupply.toNumber() + 1
+      )
+
+      const metadataUri = await uploadMetadataToIPFS(metadata)
+
+      // Generate a new keypair for the NFT mint
+      const mintKeypair = Keypair.generate()
+
+      // Derive the coupon PDA
+      const [couponPda] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from('coupon'),
+          dealAddress.toBuffer(),
+          new BN(dealAccount.currentSupply).toArrayLike(Buffer, 'le', 8)
+        ],
+        program.programId
+      )
+
+      // Derive the associated token account for the user
+      const userTokenAccount = getAssociatedTokenAddressSync(
+        mintKeypair.publicKey,
+        publicKey
+      )
+
+      // Derive the metadata PDA (Metaplex standard)
+      const TOKEN_METADATA_PROGRAM_ID = new PublicKey(
+        'metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s'
+      )
+      const [metadataPda] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from('metadata'),
+          TOKEN_METADATA_PROGRAM_ID.toBuffer(),
+          mintKeypair.publicKey.toBuffer()
+        ],
+        TOKEN_METADATA_PROGRAM_ID
+      )
+
       const signature = await program.methods
-        .mintCoupon(dealAddress)
+        .mintCoupon(dealAddress, metadataUri)
         .accountsPartial({
           deal: dealAddress,
+          coupon: couponPda,
+          mint: mintKeypair.publicKey,
+          tokenAccount: userTokenAccount,
+          metadata: metadataPda,
+          merchant: dealAccount.merchant,
           user: publicKey,
+          rent: SYSVAR_RENT_PUBKEY,
+          systemProgram: SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+          tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
         })
+        .signers([mintKeypair])
         .rpc()
 
       return signature
@@ -187,6 +268,100 @@ export function useDealsProgram() {
     },
   })
 
+  // Rate a deal
+  const rateDeal = useMutation({
+    mutationKey: ['deals', 'rate', { cluster }],
+    mutationFn: async ({ dealAddress, rating }: { dealAddress: PublicKey; rating: number }) => {
+      if (!publicKey) throw new Error('Wallet not connected')
+
+      // Derive the rating PDA
+      const [ratingPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from('rating'), dealAddress.toBuffer(), publicKey.toBuffer()],
+        program.programId
+      )
+
+      const signature = await program.methods
+        .rateDeal(rating)
+        .accountsPartial({
+          deal: dealAddress,
+          dealRating: ratingPda,
+          user: publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc()
+
+      return signature
+    },
+    onSuccess: (signature) => {
+      transactionToast(signature)
+      deals.refetch()
+    },
+    onError: (error) => {
+      toast.error(`Failed to rate deal: ${error}`)
+    },
+  })
+
+  // Add a comment
+  const addComment = useMutation({
+    mutationKey: ['deals', 'comment', { cluster }],
+    mutationFn: async ({ dealAddress, content }: { dealAddress: PublicKey; content: string }) => {
+      if (!publicKey) throw new Error('Wallet not connected')
+
+      const timestamp = Math.floor(Date.now() / 1000)
+
+      // Derive the comment PDA
+      const [commentPda] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from('comment'),
+          dealAddress.toBuffer(),
+          publicKey.toBuffer(),
+          Buffer.from(timestamp.toString().slice(0, 8)), // Use first 8 chars of timestamp for uniqueness
+        ],
+        program.programId
+      )
+
+      const signature = await program.methods
+        .addComment(new BN(timestamp), content)
+        .accountsPartial({
+          deal: dealAddress,
+          comment: commentPda,
+          author: publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc()
+
+      return signature
+    },
+    onSuccess: (signature) => {
+      transactionToast(signature)
+    },
+    onError: (error) => {
+      toast.error(`Failed to add comment: ${error}`)
+    },
+  })
+
+  // Fetch comments for a deal
+  const useCommentsByDeal = (dealAddress: PublicKey) => {
+    return useQuery({
+      queryKey: ['comments', dealAddress.toString(), { cluster }],
+      queryFn: async () => {
+        const comments = await program.account.comment.all([
+          {
+            memcmp: {
+              offset: 8,
+              bytes: dealAddress.toBase58(),
+            },
+          },
+        ])
+        return comments.map((comment) => ({
+          publicKey: comment.publicKey,
+          ...comment.account,
+        })) as Comment[]
+      },
+      enabled: !!program && !!dealAddress,
+    })
+  }
+
   return {
     program,
     programId,
@@ -195,5 +370,31 @@ export function useDealsProgram() {
     createDeal,
     updateDeal,
     mintCoupon,
+    rateDeal,
+    addComment,
+    useCommentsByDeal,
   }
+}
+
+// Hook for fetching external deals from aggregator API
+export function useExternalDeals(category?: 'flights' | 'hotels' | 'shopping' | 'restaurants') {
+  return useQuery({
+    queryKey: ['external-deals', category],
+    queryFn: async () => {
+      const url = category
+        ? `/api/external-deals?category=${category}`
+        : '/api/external-deals'
+
+      const response = await fetch(url)
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch external deals')
+      }
+
+      const data: ExternalDealsResponse = await response.json()
+      return data
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    refetchOnWindowFocus: false,
+  })
 }

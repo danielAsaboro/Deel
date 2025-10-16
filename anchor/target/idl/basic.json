@@ -1,5 +1,5 @@
 {
-  "address": "JAVuBXeBZqXNtS73azhBDAoYaaAFfo4gWXoZe2e7Jf8H",
+  "address": "GUudyUKazJCyL2f7dTG6Nm7EgUsro3acDtbbMWFuUrRd",
   "metadata": {
     "name": "basic",
     "version": "0.1.0",
@@ -7,6 +7,75 @@
     "description": "Created with Anchor"
   },
   "instructions": [
+    {
+      "name": "add_comment",
+      "discriminator": [
+        59,
+        175,
+        193,
+        236,
+        134,
+        214,
+        75,
+        141
+      ],
+      "accounts": [
+        {
+          "name": "deal"
+        },
+        {
+          "name": "comment",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  109,
+                  109,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "deal"
+              },
+              {
+                "kind": "account",
+                "path": "author"
+              },
+              {
+                "kind": "arg",
+                "path": "timestamp"
+              }
+            ]
+          }
+        },
+        {
+          "name": "author",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "timestamp",
+          "type": "i64"
+        },
+        {
+          "name": "content",
+          "type": "string"
+        }
+      ]
+    },
     {
       "name": "create_deal",
       "discriminator": [
@@ -231,6 +300,10 @@
           "writable": true
         },
         {
+          "name": "merchant",
+          "writable": true
+        },
+        {
           "name": "user",
           "writable": true,
           "signer": true
@@ -260,6 +333,71 @@
         {
           "name": "deal_id",
           "type": "pubkey"
+        },
+        {
+          "name": "metadata_uri",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "rate_deal",
+      "discriminator": [
+        193,
+        82,
+        126,
+        41,
+        197,
+        81,
+        244,
+        3
+      ],
+      "accounts": [
+        {
+          "name": "deal",
+          "writable": true
+        },
+        {
+          "name": "deal_rating",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  97,
+                  116,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "deal"
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "rating",
+          "type": "u8"
         }
       ]
     },
@@ -360,6 +498,19 @@
   ],
   "accounts": [
     {
+      "name": "Comment",
+      "discriminator": [
+        150,
+        135,
+        96,
+        244,
+        55,
+        199,
+        50,
+        65
+      ]
+    },
+    {
       "name": "Coupon",
       "discriminator": [
         24,
@@ -383,6 +534,19 @@
         162,
         182,
         219
+      ]
+    },
+    {
+      "name": "DealRating",
+      "discriminator": [
+        123,
+        212,
+        42,
+        230,
+        61,
+        42,
+        190,
+        167
       ]
     }
   ],
@@ -431,9 +595,47 @@
       "code": 6008,
       "name": "UnauthorizedMerchant",
       "msg": "Unauthorized merchant"
+    },
+    {
+      "code": 6009,
+      "name": "InvalidRating",
+      "msg": "Invalid rating value (must be 1-5)"
+    },
+    {
+      "code": 6010,
+      "name": "CommentTooLong",
+      "msg": "Comment too long"
     }
   ],
   "types": [
+    {
+      "name": "Comment",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "deal",
+            "type": "pubkey"
+          },
+          {
+            "name": "author",
+            "type": "pubkey"
+          },
+          {
+            "name": "content",
+            "type": "string"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
     {
       "name": "Coupon",
       "type": {
@@ -516,6 +718,42 @@
           {
             "name": "is_active",
             "type": "bool"
+          },
+          {
+            "name": "total_ratings",
+            "type": "u64"
+          },
+          {
+            "name": "rating_sum",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DealRating",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "deal",
+            "type": "pubkey"
+          },
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "rating",
+            "type": "u8"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
           },
           {
             "name": "bump",
