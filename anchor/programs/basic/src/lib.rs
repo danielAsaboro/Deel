@@ -200,6 +200,177 @@ pub mod basic {
         msg!("Comment added to deal");
         Ok(())
     }
+
+    pub fn list_coupon(ctx: Context<ListCoupon>, price_lamports: u64) -> Result<()> {
+        require!(price_lamports > 0, DealError::InvalidPrice);
+
+        let coupon = &ctx.accounts.coupon;
+        require!(!coupon.is_redeemed, DealError::AlreadyRedeemed);
+        require!(coupon.owner == ctx.accounts.seller.key(), DealError::NotOwner);
+
+        let listing = &mut ctx.accounts.listing;
+        listing.coupon = ctx.accounts.coupon.key();
+        listing.seller = ctx.accounts.seller.key();
+        listing.price_lamports = price_lamports;
+        listing.is_active = true;
+        listing.created_at = Clock::get()?.unix_timestamp;
+        listing.bump = ctx.bumps.listing;
+
+        msg!("Coupon listed for sale at {} lamports", price_lamports);
+        Ok(())
+    }
+
+    pub fn buy_coupon(ctx: Context<BuyCoupon>) -> Result<()> {
+        let listing = &mut ctx.accounts.listing;
+        let coupon = &mut ctx.accounts.coupon;
+
+        require!(listing.is_active, DealError::ListingInactive);
+        require!(!coupon.is_redeemed, DealError::AlreadyRedeemed);
+        require!(coupon.owner == listing.seller, DealError::InvalidListing);
+
+        // Calculate platform fee (2.5%)
+        let platform_fee = (listing.price_lamports * 25) / 1000;
+        let seller_amount = listing.price_lamports - platform_fee;
+
+        // Transfer payment from buyer to seller
+        let transfer_to_seller = CpiContext::new(
+            ctx.accounts.system_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.buyer.to_account_info(),
+                to: ctx.accounts.seller.to_account_info(),
+            },
+        );
+        transfer(transfer_to_seller, seller_amount)?;
+
+        // Transfer platform fee to platform wallet
+        let transfer_to_platform = CpiContext::new(
+            ctx.accounts.system_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.buyer.to_account_info(),
+                to: ctx.accounts.platform_wallet.to_account_info(),
+            },
+        );
+        transfer(transfer_to_platform, platform_fee)?;
+
+        // Transfer ownership
+        coupon.owner = ctx.accounts.buyer.key();
+
+        // Deactivate listing
+        listing.is_active = false;
+
+        msg!("Coupon purchased for {} lamports", listing.price_lamports);
+        Ok(())
+    }
+
+    pub fn delist_coupon(ctx: Context<DelistCoupon>) -> Result<()> {
+        let listing = &mut ctx.accounts.listing;
+
+        require!(listing.is_active, DealError::ListingInactive);
+        require!(listing.seller == ctx.accounts.seller.key(), DealError::NotOwner);
+
+        listing.is_active = false;
+
+        msg!("Coupon delisted from marketplace");
+        Ok(())
+    }
+
+    pub fn initialize_rewards_pool(ctx: Context<InitializeRewardsPool>, reward_rate_per_day: u64) -> Result<()> {
+        let pool = &mut ctx.accounts.rewards_pool;
+        pool.total_staked = 0;
+        pool.reward_rate_per_day = reward_rate_per_day;
+        pool.admin = ctx.accounts.admin.key();
+        pool.bump = ctx.bumps.rewards_pool;
+
+        msg!("Rewards pool initialized with rate: {} lamports/day", reward_rate_per_day);
+        Ok(())
+    }
+
+    pub fn stake_coupon(ctx: Context<StakeCouponCtx>) -> Result<()> {
+        let coupon = &ctx.accounts.coupon;
+        require!(!coupon.is_redeemed, DealError::AlreadyRedeemed);
+        require!(coupon.owner == ctx.accounts.staker.key(), DealError::NotOwner);
+
+        let staked_coupon = &mut ctx.accounts.staked_coupon;
+        let current_time = Clock::get()?.unix_timestamp;
+
+        staked_coupon.coupon = ctx.accounts.coupon.key();
+        staked_coupon.staker = ctx.accounts.staker.key();
+        staked_coupon.staked_at = current_time;
+        staked_coupon.last_claim_at = current_time;
+        staked_coupon.bump = ctx.bumps.staked_coupon;
+
+        let pool = &mut ctx.accounts.rewards_pool;
+        pool.total_staked += 1;
+
+        msg!("Coupon staked successfully");
+        Ok(())
+    }
+
+    pub fn unstake_coupon(ctx: Context<UnstakeCouponCtx>) -> Result<()> {
+        let staked_coupon = &ctx.accounts.staked_coupon;
+        require!(staked_coupon.staker == ctx.accounts.staker.key(), DealError::NotOwner);
+
+        // Calculate and transfer rewards
+        let current_time = Clock::get()?.unix_timestamp;
+        let time_staked = current_time - staked_coupon.last_claim_at;
+        let rewards = calculate_rewards(time_staked, ctx.accounts.rewards_pool.reward_rate_per_day)?;
+
+        if rewards > 0 {
+            let transfer_ctx = CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.rewards_pool.to_account_info(),
+                    to: ctx.accounts.staker.to_account_info(),
+                },
+            );
+            transfer(transfer_ctx, rewards)?;
+        }
+
+        let pool = &mut ctx.accounts.rewards_pool;
+        pool.total_staked -= 1;
+
+        msg!("Coupon unstaked, rewards claimed: {} lamports", rewards);
+        Ok(())
+    }
+
+    pub fn claim_rewards(ctx: Context<ClaimRewardsCtx>) -> Result<()> {
+        let staked_coupon = &mut ctx.accounts.staked_coupon;
+        require!(staked_coupon.staker == ctx.accounts.staker.key(), DealError::NotOwner);
+
+        let current_time = Clock::get()?.unix_timestamp;
+        let time_since_claim = current_time - staked_coupon.last_claim_at;
+        let rewards = calculate_rewards(time_since_claim, ctx.accounts.rewards_pool.reward_rate_per_day)?;
+
+        require!(rewards > 0, DealError::NoRewardsToClaim);
+
+        let transfer_ctx = CpiContext::new(
+            ctx.accounts.system_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.rewards_pool.to_account_info(),
+                to: ctx.accounts.staker.to_account_info(),
+            },
+        );
+        transfer(transfer_ctx, rewards)?;
+
+        staked_coupon.last_claim_at = current_time;
+
+        msg!("Rewards claimed: {} lamports", rewards);
+        Ok(())
+    }
+}
+
+// Helper function to calculate rewards
+fn calculate_rewards(time_seconds: i64, rate_per_day: u64) -> Result<u64> {
+    const SECONDS_PER_DAY: i64 = 86400;
+
+    if time_seconds <= 0 {
+        return Ok(0);
+    }
+
+    let days_staked = time_seconds / SECONDS_PER_DAY;
+    let rewards = (days_staked as u64) * rate_per_day;
+
+    Ok(rewards)
 }
 
 #[derive(Accounts)]
@@ -345,6 +516,133 @@ pub struct AddComment<'info> {
     pub system_program: Program<'info, System>,
 }
 
+#[derive(Accounts)]
+pub struct ListCoupon<'info> {
+    #[account(mut)]
+    pub coupon: Account<'info, Coupon>,
+
+    #[account(
+        init,
+        payer = seller,
+        space = 8 + Listing::INIT_SPACE,
+        seeds = [b"listing", coupon.key().as_ref()],
+        bump
+    )]
+    pub listing: Account<'info, Listing>,
+
+    #[account(mut)]
+    pub seller: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct BuyCoupon<'info> {
+    #[account(mut)]
+    pub listing: Account<'info, Listing>,
+
+    #[account(mut)]
+    pub coupon: Account<'info, Coupon>,
+
+    /// CHECK: Seller receiving payment
+    #[account(
+        mut,
+        constraint = seller.key() == listing.seller @ DealError::InvalidListing
+    )]
+    pub seller: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub buyer: Signer<'info>,
+
+    /// CHECK: Platform wallet receiving fees
+    #[account(mut)]
+    pub platform_wallet: UncheckedAccount<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct DelistCoupon<'info> {
+    #[account(mut)]
+    pub listing: Account<'info, Listing>,
+
+    pub coupon: Account<'info, Coupon>,
+
+    pub seller: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct InitializeRewardsPool<'info> {
+    #[account(
+        init,
+        payer = admin,
+        space = 8 + RewardsPool::INIT_SPACE,
+        seeds = [b"rewards_pool"],
+        bump
+    )]
+    pub rewards_pool: Account<'info, RewardsPool>,
+
+    #[account(mut)]
+    pub admin: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct StakeCouponCtx<'info> {
+    pub coupon: Account<'info, Coupon>,
+
+    #[account(
+        init,
+        payer = staker,
+        space = 8 + StakedCoupon::INIT_SPACE,
+        seeds = [b"staked_coupon", coupon.key().as_ref()],
+        bump
+    )]
+    pub staked_coupon: Account<'info, StakedCoupon>,
+
+    #[account(mut)]
+    pub rewards_pool: Account<'info, RewardsPool>,
+
+    #[account(mut)]
+    pub staker: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct UnstakeCouponCtx<'info> {
+    #[account(
+        mut,
+        close = staker
+    )]
+    pub staked_coupon: Account<'info, StakedCoupon>,
+
+    pub coupon: Account<'info, Coupon>,
+
+    #[account(mut)]
+    pub rewards_pool: Account<'info, RewardsPool>,
+
+    #[account(mut)]
+    pub staker: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ClaimRewardsCtx<'info> {
+    #[account(mut)]
+    pub staked_coupon: Account<'info, StakedCoupon>,
+
+    #[account(mut)]
+    pub rewards_pool: Account<'info, RewardsPool>,
+
+    #[account(mut)]
+    pub staker: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
 #[account]
 #[derive(InitSpace)]
 pub struct Deal {
@@ -399,6 +697,36 @@ pub struct Comment {
     pub bump: u8,
 }
 
+#[account]
+#[derive(InitSpace)]
+pub struct Listing {
+    pub coupon: Pubkey,
+    pub seller: Pubkey,
+    pub price_lamports: u64,
+    pub is_active: bool,
+    pub created_at: i64,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct RewardsPool {
+    pub total_staked: u64,
+    pub reward_rate_per_day: u64,
+    pub admin: Pubkey,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct StakedCoupon {
+    pub coupon: Pubkey,
+    pub staker: Pubkey,
+    pub staked_at: i64,
+    pub last_claim_at: i64,
+    pub bump: u8,
+}
+
 #[error_code]
 pub enum DealError {
     #[msg("Invalid discount percentage")]
@@ -423,4 +751,12 @@ pub enum DealError {
     InvalidRating,
     #[msg("Comment too long")]
     CommentTooLong,
+    #[msg("Invalid price")]
+    InvalidPrice,
+    #[msg("Listing is not active")]
+    ListingInactive,
+    #[msg("Invalid listing")]
+    InvalidListing,
+    #[msg("No rewards to claim")]
+    NoRewardsToClaim,
 }

@@ -83,6 +83,80 @@ export type Basic = {
       ]
     },
     {
+      "name": "buyCoupon",
+      "discriminator": [
+        163,
+        156,
+        135,
+        250,
+        4,
+        243,
+        89,
+        98
+      ],
+      "accounts": [
+        {
+          "name": "listing",
+          "writable": true
+        },
+        {
+          "name": "coupon",
+          "writable": true
+        },
+        {
+          "name": "seller",
+          "writable": true
+        },
+        {
+          "name": "buyer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "platformWallet",
+          "writable": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claimRewards",
+      "discriminator": [
+        4,
+        144,
+        132,
+        71,
+        116,
+        23,
+        151,
+        80
+      ],
+      "accounts": [
+        {
+          "name": "stakedCoupon",
+          "writable": true
+        },
+        {
+          "name": "rewardsPool",
+          "writable": true
+        },
+        {
+          "name": "staker",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "createDeal",
       "discriminator": [
         198,
@@ -155,6 +229,146 @@ export type Basic = {
           "name": "category",
           "type": "string"
         },
+        {
+          "name": "priceLamports",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "delistCoupon",
+      "discriminator": [
+        60,
+        158,
+        196,
+        182,
+        238,
+        104,
+        228,
+        203
+      ],
+      "accounts": [
+        {
+          "name": "listing",
+          "writable": true
+        },
+        {
+          "name": "coupon"
+        },
+        {
+          "name": "seller",
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initializeRewardsPool",
+      "discriminator": [
+        101,
+        39,
+        131,
+        25,
+        202,
+        32,
+        15,
+        217
+      ],
+      "accounts": [
+        {
+          "name": "rewardsPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  119,
+                  97,
+                  114,
+                  100,
+                  115,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "rewardRatePerDay",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "listCoupon",
+      "discriminator": [
+        136,
+        133,
+        162,
+        135,
+        190,
+        82,
+        69,
+        10
+      ],
+      "accounts": [
+        {
+          "name": "coupon",
+          "writable": true
+        },
+        {
+          "name": "listing",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  115,
+                  116,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "coupon"
+              }
+            ]
+          }
+        },
+        {
+          "name": "seller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
         {
           "name": "priceLamports",
           "type": "u64"
@@ -435,6 +649,68 @@ export type Basic = {
       "args": []
     },
     {
+      "name": "stakeCoupon",
+      "discriminator": [
+        71,
+        4,
+        167,
+        79,
+        221,
+        84,
+        213,
+        156
+      ],
+      "accounts": [
+        {
+          "name": "coupon"
+        },
+        {
+          "name": "stakedCoupon",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  100,
+                  95,
+                  99,
+                  111,
+                  117,
+                  112,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "coupon"
+              }
+            ]
+          }
+        },
+        {
+          "name": "rewardsPool",
+          "writable": true
+        },
+        {
+          "name": "staker",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "transferCoupon",
       "discriminator": [
         144,
@@ -457,6 +733,42 @@ export type Basic = {
         },
         {
           "name": "newOwner"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "unstakeCoupon",
+      "discriminator": [
+        131,
+        36,
+        231,
+        138,
+        180,
+        249,
+        26,
+        197
+      ],
+      "accounts": [
+        {
+          "name": "stakedCoupon",
+          "writable": true
+        },
+        {
+          "name": "coupon"
+        },
+        {
+          "name": "rewardsPool",
+          "writable": true
+        },
+        {
+          "name": "staker",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": []
@@ -554,6 +866,45 @@ export type Basic = {
         190,
         167
       ]
+    },
+    {
+      "name": "listing",
+      "discriminator": [
+        218,
+        32,
+        50,
+        73,
+        43,
+        134,
+        26,
+        58
+      ]
+    },
+    {
+      "name": "rewardsPool",
+      "discriminator": [
+        107,
+        36,
+        119,
+        42,
+        181,
+        249,
+        18,
+        37
+      ]
+    },
+    {
+      "name": "stakedCoupon",
+      "discriminator": [
+        181,
+        11,
+        120,
+        4,
+        81,
+        93,
+        121,
+        98
+      ]
     }
   ],
   "errors": [
@@ -611,6 +962,26 @@ export type Basic = {
       "code": 6010,
       "name": "commentTooLong",
       "msg": "Comment too long"
+    },
+    {
+      "code": 6011,
+      "name": "invalidPrice",
+      "msg": "Invalid price"
+    },
+    {
+      "code": 6012,
+      "name": "listingInactive",
+      "msg": "Listing is not active"
+    },
+    {
+      "code": 6013,
+      "name": "invalidListing",
+      "msg": "Invalid listing"
+    },
+    {
+      "code": 6014,
+      "name": "noRewardsToClaim",
+      "msg": "No rewards to claim"
     }
   ],
   "types": [
@@ -759,6 +1130,90 @@ export type Basic = {
           },
           {
             "name": "createdAt",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "listing",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "coupon",
+            "type": "pubkey"
+          },
+          {
+            "name": "seller",
+            "type": "pubkey"
+          },
+          {
+            "name": "priceLamports",
+            "type": "u64"
+          },
+          {
+            "name": "isActive",
+            "type": "bool"
+          },
+          {
+            "name": "createdAt",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "rewardsPool",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "totalStaked",
+            "type": "u64"
+          },
+          {
+            "name": "rewardRatePerDay",
+            "type": "u64"
+          },
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "stakedCoupon",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "coupon",
+            "type": "pubkey"
+          },
+          {
+            "name": "staker",
+            "type": "pubkey"
+          },
+          {
+            "name": "stakedAt",
+            "type": "i64"
+          },
+          {
+            "name": "lastClaimAt",
             "type": "i64"
           },
           {

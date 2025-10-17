@@ -1,0 +1,9 @@
+anchor/
+resources/
+chats/
+node_modules/
+.git/
+*.md
+.DS_Store
+.env.local
+.env.local.example

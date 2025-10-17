@@ -625,9 +625,23 @@ export function DealsList() {
               ))}
             </div>
           ) : (
-            <div className="text-center py-8">
-              <p className="text-muted-foreground">No external deals found</p>
-            </div>
+            <Card>
+              <CardContent className="py-12">
+                <div className="text-center space-y-3">
+                  <Globe className="h-12 w-12 mx-auto text-muted-foreground" />
+                  <div>
+                    <p className="font-medium">No external deals available</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Configure API keys in .env.local to load deals from Amadeus, RapidAPI, Yelp, and FakeStore
+                    </p>
+                  </div>
+                  <div className="text-xs text-muted-foreground pt-2">
+                    <p>Missing: Amadeus, RapidAPI, or Yelp API keys</p>
+                    <p>See .env.local.example for setup instructions</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           )}
         </div>
       )}
@@ -644,9 +658,23 @@ export function DealsList() {
             ))}
           </div>
         ) : (
-          <div className="text-center py-8">
-            <p className="text-muted-foreground">No blockchain deals found</p>
-          </div>
+          <Card>
+            <CardContent className="py-12">
+              <div className="text-center space-y-3">
+                <Package className="h-12 w-12 mx-auto text-muted-foreground" />
+                <div>
+                  <p className="font-medium">No blockchain deals yet</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Be the first merchant to create an NFT coupon deal or import one from external sources
+                  </p>
+                </div>
+                <Button onClick={() => setShowExternal(true)} variant="outline" size="sm">
+                  <Globe className="h-4 w-4 mr-2" />
+                  View External Deals to Import
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         )}
       </div>
     </div>

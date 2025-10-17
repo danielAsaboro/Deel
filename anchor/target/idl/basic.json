@@ -77,6 +77,80 @@
       ]
     },
     {
+      "name": "buy_coupon",
+      "discriminator": [
+        163,
+        156,
+        135,
+        250,
+        4,
+        243,
+        89,
+        98
+      ],
+      "accounts": [
+        {
+          "name": "listing",
+          "writable": true
+        },
+        {
+          "name": "coupon",
+          "writable": true
+        },
+        {
+          "name": "seller",
+          "writable": true
+        },
+        {
+          "name": "buyer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "platform_wallet",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claim_rewards",
+      "discriminator": [
+        4,
+        144,
+        132,
+        71,
+        116,
+        23,
+        151,
+        80
+      ],
+      "accounts": [
+        {
+          "name": "staked_coupon",
+          "writable": true
+        },
+        {
+          "name": "rewards_pool",
+          "writable": true
+        },
+        {
+          "name": "staker",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "create_deal",
       "discriminator": [
         198,
@@ -149,6 +223,146 @@
           "name": "category",
           "type": "string"
         },
+        {
+          "name": "price_lamports",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "delist_coupon",
+      "discriminator": [
+        60,
+        158,
+        196,
+        182,
+        238,
+        104,
+        228,
+        203
+      ],
+      "accounts": [
+        {
+          "name": "listing",
+          "writable": true
+        },
+        {
+          "name": "coupon"
+        },
+        {
+          "name": "seller",
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initialize_rewards_pool",
+      "discriminator": [
+        101,
+        39,
+        131,
+        25,
+        202,
+        32,
+        15,
+        217
+      ],
+      "accounts": [
+        {
+          "name": "rewards_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  119,
+                  97,
+                  114,
+                  100,
+                  115,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "reward_rate_per_day",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "list_coupon",
+      "discriminator": [
+        136,
+        133,
+        162,
+        135,
+        190,
+        82,
+        69,
+        10
+      ],
+      "accounts": [
+        {
+          "name": "coupon",
+          "writable": true
+        },
+        {
+          "name": "listing",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  115,
+                  116,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "coupon"
+              }
+            ]
+          }
+        },
+        {
+          "name": "seller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
         {
           "name": "price_lamports",
           "type": "u64"
@@ -429,6 +643,68 @@
       "args": []
     },
     {
+      "name": "stake_coupon",
+      "discriminator": [
+        71,
+        4,
+        167,
+        79,
+        221,
+        84,
+        213,
+        156
+      ],
+      "accounts": [
+        {
+          "name": "coupon"
+        },
+        {
+          "name": "staked_coupon",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  100,
+                  95,
+                  99,
+                  111,
+                  117,
+                  112,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "coupon"
+              }
+            ]
+          }
+        },
+        {
+          "name": "rewards_pool",
+          "writable": true
+        },
+        {
+          "name": "staker",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "transfer_coupon",
       "discriminator": [
         144,
@@ -451,6 +727,42 @@
         },
         {
           "name": "new_owner"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "unstake_coupon",
+      "discriminator": [
+        131,
+        36,
+        231,
+        138,
+        180,
+        249,
+        26,
+        197
+      ],
+      "accounts": [
+        {
+          "name": "staked_coupon",
+          "writable": true
+        },
+        {
+          "name": "coupon"
+        },
+        {
+          "name": "rewards_pool",
+          "writable": true
+        },
+        {
+          "name": "staker",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": []
@@ -548,6 +860,45 @@
         190,
         167
       ]
+    },
+    {
+      "name": "Listing",
+      "discriminator": [
+        218,
+        32,
+        50,
+        73,
+        43,
+        134,
+        26,
+        58
+      ]
+    },
+    {
+      "name": "RewardsPool",
+      "discriminator": [
+        107,
+        36,
+        119,
+        42,
+        181,
+        249,
+        18,
+        37
+      ]
+    },
+    {
+      "name": "StakedCoupon",
+      "discriminator": [
+        181,
+        11,
+        120,
+        4,
+        81,
+        93,
+        121,
+        98
+      ]
     }
   ],
   "errors": [
@@ -605,6 +956,26 @@
       "code": 6010,
       "name": "CommentTooLong",
       "msg": "Comment too long"
+    },
+    {
+      "code": 6011,
+      "name": "InvalidPrice",
+      "msg": "Invalid price"
+    },
+    {
+      "code": 6012,
+      "name": "ListingInactive",
+      "msg": "Listing is not active"
+    },
+    {
+      "code": 6013,
+      "name": "InvalidListing",
+      "msg": "Invalid listing"
+    },
+    {
+      "code": 6014,
+      "name": "NoRewardsToClaim",
+      "msg": "No rewards to claim"
     }
   ],
   "types": [
@@ -753,6 +1124,90 @@
           },
           {
             "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Listing",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "coupon",
+            "type": "pubkey"
+          },
+          {
+            "name": "seller",
+            "type": "pubkey"
+          },
+          {
+            "name": "price_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "is_active",
+            "type": "bool"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RewardsPool",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "total_staked",
+            "type": "u64"
+          },
+          {
+            "name": "reward_rate_per_day",
+            "type": "u64"
+          },
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "StakedCoupon",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "coupon",
+            "type": "pubkey"
+          },
+          {
+            "name": "staker",
+            "type": "pubkey"
+          },
+          {
+            "name": "staked_at",
+            "type": "i64"
+          },
+          {
+            "name": "last_claim_at",
             "type": "i64"
           },
           {

@@ -1,13 +1,15 @@
 'use client'
 
 import { getBasicProgram, getBasicProgramId } from '@project/anchor'
-import { useWallet } from '@solana/wallet-adapter-react'
-import { Cluster, Keypair, PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js'
+import { useConnection, useWallet } from '@solana/wallet-adapter-react'
+import { Cluster, Keypair, PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY, Transaction } from '@solana/web3.js'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { useCluster } from '../cluster/cluster-data-access'
 import { useAnchorProvider } from '../solana/solana-provider'
 import { useTransactionToast } from '../use-transaction-toast'
+import { useGateway } from '../gateway/gateway-data-access'
+import { buildGatewayTransaction, sendGatewayTransaction, gatewayTransactionTracker } from '@/lib/gateway'
 import { toast } from 'sonner'
 import { BN } from '@coral-xyz/anchor'
 import {
@@ -51,10 +53,12 @@ export interface Comment {
 }
 
 export function useDealsProgram() {
-  const { publicKey } = useWallet()
+  const { connection } = useConnection()
+  const { publicKey, signTransaction } = useWallet()
   const { cluster } = useCluster()
   const transactionToast = useTransactionToast()
   const provider = useAnchorProvider()
+  const gateway = useGateway()
   const programId = useMemo(() => getBasicProgramId(cluster.network as Cluster), [cluster])
   const program = useMemo(() => getBasicProgram(provider, programId), [provider, programId])
 
@@ -115,20 +119,116 @@ export function useDealsProgram() {
     }) => {
       if (!publicKey) throw new Error('Wallet not connected')
 
-      const signature = await program.methods
-        .createDeal(
-          title,
-          description,
-          discountPercent,
-          new BN(maxSupply),
-          new BN(expiryTimestamp),
-          category,
-          new BN(priceLamports)
-        )
-        .accounts({
-          merchant: publicKey,
-        })
-        .rpc()
+      let signature: string
+
+      // Check if Gateway is enabled and configured
+      if (gateway.isEnabled && gateway.apiKey) {
+        const txId = `create-deal-${Date.now()}`
+
+        try {
+          // Track the transaction
+          gatewayTransactionTracker.start(txId, {
+            deliveryMethod: gateway.config.deliveryMethodType,
+            cuPriceRange: gateway.config.cuPriceRange,
+            jitoTipRange: gateway.config.jitoTipRange,
+          })
+
+          toast.info('Building transaction with Gateway...')
+
+          // Build the transaction using Anchor
+          const tx = await program.methods
+            .createDeal(
+              title,
+              description,
+              discountPercent,
+              new BN(maxSupply),
+              new BN(expiryTimestamp),
+              category,
+              new BN(priceLamports)
+            )
+            .accounts({
+              merchant: publicKey,
+            })
+            .transaction()
+
+          // Get recent blockhash (Gateway will replace this)
+          const { blockhash } = await connection.getLatestBlockhash()
+          tx.recentBlockhash = blockhash
+          tx.feePayer = provider.publicKey
+
+          gatewayTransactionTracker.update(txId, { status: 'building' })
+
+          // Use Gateway to optimize the transaction
+          const buildResponse = await buildGatewayTransaction(
+            gateway.getCluster(),
+            gateway.apiKey,
+            tx,
+            gateway.getBuildOptions()
+          )
+
+          toast.info('Signing optimized transaction...')
+          gatewayTransactionTracker.update(txId, { status: 'signing' })
+
+          // Decode and sign the optimized transaction
+          const optimizedTxBuffer = Buffer.from(buildResponse.result.transaction, 'base64')
+          const optimizedTx = Transaction.from(optimizedTxBuffer)
+
+          if (!signTransaction) {
+            throw new Error('Wallet does not support transaction signing')
+          }
+
+          const signedTx = await signTransaction(optimizedTx)
+          const signedTxBase64 = Buffer.from(signedTx.serialize()).toString('base64')
+
+          toast.info('Sending transaction via Gateway...')
+          gatewayTransactionTracker.update(txId, { status: 'sending' })
+
+          // Send through Gateway
+          const sendResponse = await sendGatewayTransaction(
+            gateway.getCluster(),
+            gateway.apiKey,
+            signedTxBase64,
+            { encoding: 'base64' }
+          )
+
+          if (!sendResponse.result) {
+            throw new Error('No signature returned from Gateway')
+          }
+
+          signature = sendResponse.result
+
+          gatewayTransactionTracker.update(txId, {
+            status: 'success',
+            signature,
+          })
+
+          toast.success('Transaction sent via Gateway!')
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+          gatewayTransactionTracker.update(txId, {
+            status: 'failed',
+            error: errorMessage,
+          })
+          throw error
+        }
+      } else {
+        // Fallback to standard RPC if Gateway is not enabled
+        toast.info('Sending transaction via standard RPC...')
+        signature = await program.methods
+          .createDeal(
+            title,
+            description,
+            discountPercent,
+            new BN(maxSupply),
+            new BN(expiryTimestamp),
+            category,
+            new BN(priceLamports)
+          )
+          .accounts({
+            merchant: publicKey,
+          })
+          .rpc()
+      }
 
       const [dealPda] = PublicKey.findProgramAddressSync(
         [Buffer.from('deal'), publicKey.toBuffer(), Buffer.from(title)],
@@ -142,7 +242,8 @@ export function useDealsProgram() {
       deals.refetch()
     },
     onError: (error) => {
-      toast.error(`Failed to create deal: ${error}`)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      toast.error(`Failed to create deal: ${errorMessage}`)
     },
   })
 

@@ -1,0 +1,68 @@
+{
+  "fetch_date": "2025-10-28T11:42:02.512326",
+  "total_urls": 12,
+  "successful": 12,
+  "failed": 0,
+  "results": [
+    {
+      "url": "https://gateway.sanctum.so/docs",
+      "status": "success",
+      "markdown_file": "gateway.sanctum.so_docs.md"
+    },
+    {
+      "url": "https://gateway.sanctum.so/docs/quickstart",
+      "status": "success",
+      "markdown_file": "gateway.sanctum.so_docs_quickstart.md"
+    },
+    {
+      "url": "https://gateway.sanctum.so/docs/delivery-methods",
+      "status": "success",
+      "markdown_file": "gateway.sanctum.so_docs_delivery-methods.md"
+    },
+    {
+      "url": "https://gateway.sanctum.so/docs/parameters",
+      "status": "success",
+      "markdown_file": "gateway.sanctum.so_docs_parameters.md"
+    },
+    {
+      "url": "https://gateway.sanctum.so/docs/endpoints",
+      "status": "success",
+      "markdown_file": "gateway.sanctum.so_docs_endpoints.md"
+    },
+    {
+      "url": "https://gateway.sanctum.so/docs/concepts/builder",
+      "status": "success",
+      "markdown_file": "gateway.sanctum.so_docs_concepts_builder.md"
+    },
+    {
+      "url": "https://gateway.sanctum.so/docs/concepts/delivery",
+      "status": "success",
+      "markdown_file": "gateway.sanctum.so_docs_concepts_delivery.md"
+    },
+    {
+      "url": "https://gateway.sanctum.so/docs/concepts/observability",
+      "status": "success",
+      "markdown_file": "gateway.sanctum.so_docs_concepts_observability.md"
+    },
+    {
+      "url": "https://gateway.sanctum.so/docs/concepts/optimization",
+      "status": "success",
+      "markdown_file": "gateway.sanctum.so_docs_concepts_optimization.md"
+    },
+    {
+      "url": "https://gateway.sanctum.so/docs/misc/tip-accounts",
+      "status": "success",
+      "markdown_file": "gateway.sanctum.so_docs_misc_tip-accounts.md"
+    },
+    {
+      "url": "https://gateway.sanctum.so/docs/misc/rate-limits",
+      "status": "success",
+      "markdown_file": "gateway.sanctum.so_docs_misc_rate-limits.md"
+    },
+    {
+      "url": "https://gateway.sanctum.so/docs/misc/press-kit",
+      "status": "success",
+      "markdown_file": "gateway.sanctum.so_docs_misc_press-kit.md"
+    }
+  ]
+}
