@@ -188,7 +188,9 @@ export function DealCard({ deal }: { deal: Deal }) {
   }
 
   const handleShare = (platform: 'twitter' | 'copy') => {
-    const url = `${window.location.origin}/deals/${deal.publicKey.toString()}`
+    // Use environment variable for base URL, fallback to window.location.origin
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || window.location.origin
+    const url = `${baseUrl}/deals/${deal.publicKey.toString()}`
     const text = `Check out this deal: ${deal.title} - ${deal.discountPercent}% OFF!`
 
     if (platform === 'twitter') {

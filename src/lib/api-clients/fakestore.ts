@@ -15,9 +15,10 @@ export class FakeStoreClient {
       const products: FakeStoreProduct[] = await response.json()
 
       return products.map((product) => {
-        // Generate random discount between 10-50%
-        const discountPercent = Math.floor(Math.random() * 40) + 10
-        const discountedPrice = product.price * (1 - discountPercent / 100)
+        // Note: FakeStore API is for demo purposes only and doesn't provide real discount data
+        // Setting discount to 0 to avoid misleading information
+        const discountPercent = 0
+        const discountedPrice = product.price
 
         return {
           id: `fakestore-${product.id}`,

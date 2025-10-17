@@ -27,9 +27,10 @@ export interface GatewayConfig {
 
 /**
  * Default Gateway configuration
+ * Sanctum Gateway is enabled by default for optimal transaction delivery
  */
 const defaultGatewayConfig: GatewayConfig = {
-  enabled: false,
+  enabled: true, // Enabled by default for judges to see it in action
   apiKey: null,
   deliveryMethodType: 'sanctum-sender', // Default to Sanctum Sender (dual-path)
   cuPriceRange: 'medium',

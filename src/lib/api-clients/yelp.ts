@@ -8,12 +8,14 @@ export class YelpClient {
     this.apiKey = process.env.YELP_API_KEY || ''
   }
 
-  async searchRestaurantDeals(location: string = 'New York'): Promise<ExternalDeal[]> {
+  async searchRestaurantDeals(location?: string): Promise<ExternalDeal[]> {
+    // Use environment variable or fallback to New York
+    const searchLocation = location || process.env.YELP_DEFAULT_LOCATION || 'New York'
     try {
       const response = await fetch(
         `${this.baseUrl}/businesses/search?` +
           new URLSearchParams({
-            location,
+            location: searchLocation,
             term: 'restaurants',
             limit: '20',
             sort_by: 'rating',
@@ -43,8 +45,10 @@ export class YelpClient {
           $$$$: 100,
         }
         const estimatedPrice = priceMap[business.price || '$$'] || 30
-        const discountPercent = Math.floor(Math.random() * 30) + 15 // 15-45% off
-        const discountedPrice = estimatedPrice * (1 - discountPercent / 100)
+        // Note: Yelp API doesn't provide discount information
+        // Setting discount to 0 since this is for informational purposes only
+        const discountPercent = 0
+        const discountedPrice = estimatedPrice
 
         return {
           id: `yelp-${business.id}`,

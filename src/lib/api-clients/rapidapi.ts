@@ -8,11 +8,13 @@ export class RapidAPIClient {
     this.apiKey = process.env.RAPIDAPI_KEY || ''
   }
 
-  async searchHotelDeals(city: string = 'New York'): Promise<ExternalDeal[]> {
+  async searchHotelDeals(city?: string): Promise<ExternalDeal[]> {
+    // Use environment variable or fallback to New York
+    const searchCity = city || process.env.RAPIDAPI_DEFAULT_CITY || 'New York'
     try {
       // Get location ID first
       const locationResponse = await fetch(
-        `${this.baseUrl}/hotels/locations?name=${encodeURIComponent(city)}&locale=en-gb`,
+        `${this.baseUrl}/hotels/locations?name=${encodeURIComponent(searchCity)}&locale=en-gb`,
         {
           headers: {
             'X-RapidAPI-Key': this.apiKey,
@@ -30,7 +32,7 @@ export class RapidAPIClient {
       const destId = locationData[0]?.dest_id
 
       if (!destId) {
-        console.error('No destination ID found for city:', city)
+        console.error('No destination ID found for city:', searchCity)
         return []
       }
 
