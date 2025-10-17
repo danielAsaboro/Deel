@@ -463,6 +463,119 @@ export function useDealsProgram() {
     })
   }
 
+  // List coupon for sale
+  const listCoupon = useMutation({
+    mutationKey: ['coupons', 'list', { cluster }],
+    mutationFn: async ({ couponAddress, priceLamports }: { couponAddress: PublicKey; priceLamports: number }) => {
+      if (!publicKey) throw new Error('Wallet not connected')
+
+      // Derive the listing PDA
+      const [listingPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from('listing'), couponAddress.toBuffer()],
+        program.programId
+      )
+
+      const signature = await program.methods
+        .listCoupon(new BN(priceLamports))
+        .accountsPartial({
+          coupon: couponAddress,
+          listing: listingPda,
+          seller: publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc()
+
+      return signature
+    },
+    onSuccess: (signature) => {
+      transactionToast(signature)
+      toast.success('Coupon listed for sale!')
+    },
+    onError: (error) => {
+      toast.error(`Failed to list coupon: ${error}`)
+    },
+  })
+
+  // Buy a listed coupon
+  const buyCoupon = useMutation({
+    mutationKey: ['coupons', 'buy', { cluster }],
+    mutationFn: async ({ listingAddress, platformWallet }: { listingAddress: PublicKey; platformWallet: PublicKey }) => {
+      if (!publicKey) throw new Error('Wallet not connected')
+
+      // Fetch listing to get coupon and seller
+      const listingAccount = await program.account.listing.fetch(listingAddress)
+
+      const signature = await program.methods
+        .buyCoupon()
+        .accountsPartial({
+          listing: listingAddress,
+          coupon: listingAccount.coupon,
+          seller: listingAccount.seller,
+          buyer: publicKey,
+          platformWallet: platformWallet,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc()
+
+      return signature
+    },
+    onSuccess: (signature) => {
+      transactionToast(signature)
+      toast.success('Coupon purchased successfully!')
+    },
+    onError: (error) => {
+      toast.error(`Failed to buy coupon: ${error}`)
+    },
+  })
+
+  // Delist a coupon
+  const delistCoupon = useMutation({
+    mutationKey: ['coupons', 'delist', { cluster }],
+    mutationFn: async ({ listingAddress, couponAddress }: { listingAddress: PublicKey; couponAddress: PublicKey }) => {
+      if (!publicKey) throw new Error('Wallet not connected')
+
+      const signature = await program.methods
+        .delistCoupon()
+        .accountsPartial({
+          listing: listingAddress,
+          coupon: couponAddress,
+          seller: publicKey,
+        })
+        .rpc()
+
+      return signature
+    },
+    onSuccess: (signature) => {
+      transactionToast(signature)
+      toast.success('Coupon delisted!')
+    },
+    onError: (error) => {
+      toast.error(`Failed to delist coupon: ${error}`)
+    },
+  })
+
+  // Fetch all active listings
+  const useActiveListings = () => {
+    return useQuery({
+      queryKey: ['listings', 'active', { cluster }],
+      queryFn: async () => {
+        const listings = await program.account.listing.all([
+          {
+            memcmp: {
+              offset: 8 + 32 + 32, // Skip coupon and seller pubkeys
+              bytes: Buffer.from([1]).toString('base64'), // is_active = true
+            },
+          },
+        ])
+        return listings.map((listing) => ({
+          publicKey: listing.publicKey,
+          ...listing.account,
+        }))
+      },
+      enabled: !!program,
+    })
+  }
+
   return {
     program,
     programId,
@@ -474,6 +587,10 @@ export function useDealsProgram() {
     rateDeal,
     addComment,
     useCommentsByDeal,
+    listCoupon,
+    buyCoupon,
+    delistCoupon,
+    useActiveListings,
   }
 }
 

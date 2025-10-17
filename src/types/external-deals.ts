@@ -1,6 +1,6 @@
 export interface ExternalDeal {
   id: string
-  source: 'amadeus' | 'rapidapi' | 'yelp' | 'fakestore'
+  source: 'amadeus' | 'rapidapi' | 'themealdb' | 'fakestore'
   category: 'flights' | 'hotels' | 'shopping' | 'restaurants'
   title: string
   description: string
@@ -106,8 +106,8 @@ export interface ExternalDealsResponse {
   deals: ExternalDeal[]
   sources: {
     amadeus: { flights: number; hotels: number }
-    rapidapi: { hotels: number; restaurants: number }
-    yelp: { restaurants: number }
+    rapidapi: { hotels: number }
+    themealdb: { restaurants: number }
     fakestore: { products: number }
   }
   timestamp: string

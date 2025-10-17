@@ -120,68 +120,11 @@ export class AmadeusClient {
   }
 
   async searchHotelDeals(cityCode: string = 'NYC', cityName: string = 'New York City'): Promise<ExternalDeal[]> {
-    try {
-      const token = await this.getAccessToken()
-
-      // Search hotels based on provided city
-      const response = await fetch(
-        `${this.baseUrl}/v3/shopping/hotel-offers?` +
-          new URLSearchParams({
-            cityCode,
-            checkInDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-              .toISOString()
-              .split('T')[0],
-            checkOutDate: new Date(Date.now() + 32 * 24 * 60 * 60 * 1000)
-              .toISOString()
-              .split('T')[0],
-            adults: '2',
-            radius: '5',
-            radiusUnit: 'KM',
-            ratings: '4,5',
-          }),
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      )
-
-      if (!response.ok) {
-        console.error('Amadeus hotels API error:', response.statusText)
-        return []
-      }
-
-      const data = await response.json()
-      const hotels: AmadeusHotelOffer[] = data.data || []
-
-      return hotels.slice(0, 10).map((hotel) => {
-        const offer = hotel.offers[0]
-        const price = parseFloat(offer.price.total)
-        // Note: Amadeus provides actual prices, not discounts
-        // Setting discount to 0 to show real market prices
-        const discountPercent = 0
-
-        return {
-          id: `amadeus-hotel-${hotel.hotel.hotelId}-${offer.id}`,
-          source: 'amadeus' as const,
-          category: 'hotels' as const,
-          title: hotel.hotel.name,
-          description: offer.room.description.text || 'Hotel room',
-          discountPercent,
-          originalPrice: price,
-          discountedPrice: price,
-          currency: offer.price.currency,
-          location: cityName,
-          metadata: {
-            hotelId: hotel.hotel.hotelId,
-            roomType: offer.room.type,
-          },
-        }
-      })
-    } catch (error) {
-      console.error('Error fetching Amadeus hotels:', error)
-      return []
-    }
+    // Note: Amadeus Test API hotel search requires hotelIds (2-step process)
+    // For this demo, hotels are provided by RapidAPI instead
+    // Production apps should implement: 1) Search hotels by city 2) Get offers by hotelIds
+    console.log('Amadeus hotels disabled - using RapidAPI for hotel deals')
+    return []
   }
 
   async getAllDeals(): Promise<ExternalDeal[]> {

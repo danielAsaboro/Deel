@@ -55,6 +55,8 @@ export class RapidAPIClient {
             room_number: '1',
             units: 'metric',
             order_by: 'popularity',
+            locale: 'en-gb',
+            filter_by_currency: 'USD',
           }),
         {
           headers: {
@@ -65,7 +67,9 @@ export class RapidAPIClient {
       )
 
       if (!hotelsResponse.ok) {
-        console.error('RapidAPI hotels search error:', hotelsResponse.statusText)
+        const errorText = await hotelsResponse.text()
+        console.error('RapidAPI hotels search error:', hotelsResponse.status, hotelsResponse.statusText)
+        console.error('RapidAPI hotels error details:', errorText)
         return []
       }
 
