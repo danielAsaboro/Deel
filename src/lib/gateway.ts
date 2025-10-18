@@ -17,7 +17,6 @@ export type JitoTipRange = 'low' | 'medium' | 'high' | 'max'
  * Options for buildGatewayTransaction
  */
 export interface BuildGatewayTransactionOptions {
-  encoding?: 'base64' | 'base58'
   skipSimulation?: boolean
   skipPriorityFee?: boolean
   cuPriceRange?: FeeRange
@@ -71,40 +70,72 @@ export function getGatewayEndpoint(cluster: GatewayCluster, apiKey: string): str
 
 /**
  * Convert a transaction to base64-encoded wire format
+ *
+ * For Legacy Transactions: Allows serialization of unsigned transactions
+ * by disabling signature requirements. This is necessary when sending
+ * unsigned transactions to buildGatewayTransaction for optimization.
+ *
+ * For Versioned Transactions: Can be serialized unsigned by default.
  */
 export function serializeTransaction(transaction: Transaction | VersionedTransaction): string {
+  // Legacy Transactions require explicit options to serialize unsigned
+  if (transaction instanceof Transaction) {
+    const serialized = transaction.serialize({
+      requireAllSignatures: false,  // Allow unsigned transactions
+      verifySignatures: false,      // Don't verify signatures
+    })
+    return Buffer.from(serialized).toString('base64')
+  }
+
+  // VersionedTransactions can be serialized unsigned by default
   const serialized = transaction.serialize()
   return Buffer.from(serialized).toString('base64')
 }
 
 /**
- * Build a Gateway-optimized transaction
- * This handles priority fees, Jito tips, simulation, and blockhash management
+ * Build a Gateway-optimized transaction (CLIENT-SIDE)
+ *
+ * This function calls the Next.js API route which proxies the request to Sanctum Gateway.
+ * This keeps the API key secure on the server-side and avoids CORS issues.
+ *
+ * @param cluster - The Solana cluster (mainnet or devnet)
+ * @param transaction - The unsigned transaction to optimize
+ * @param options - Build options (priority fees, Jito tips, etc.)
+ * @returns The optimized transaction from Gateway
  */
 export async function buildGatewayTransaction(
   cluster: GatewayCluster,
-  apiKey: string,
   transaction: Transaction | VersionedTransaction,
   options: BuildGatewayTransactionOptions = {}
 ): Promise<BuildGatewayTransactionResponse> {
-  const endpoint = getGatewayEndpoint(cluster, apiKey)
   const serializedTx = serializeTransaction(transaction)
 
-  const response = await fetch(endpoint, {
+  console.log('[Gateway Client] Building transaction:', {
+    cluster,
+    transactionLength: serializedTx.length,
+    options
+  })
+
+  const response = await fetch('/api/gateway/build', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      id: `build-${Date.now()}`,
-      jsonrpc: '2.0',
-      method: 'buildGatewayTransaction',
-      params: [serializedTx, options],
+      cluster,
+      transaction: serializedTx,
+      options,
     }),
   })
 
   if (!response.ok) {
-    throw new Error(`Failed to build gateway transaction: ${response.statusText}`)
+    const errorData = await response.json().catch(() => ({ error: response.statusText }))
+    console.error('[Gateway Client] Build failed:', {
+      status: response.status,
+      statusText: response.statusText,
+      error: errorData
+    })
+    throw new Error(`Failed to build gateway transaction: ${errorData.error || response.statusText}`)
   }
 
   const data = (await response.json()) as BuildGatewayTransactionResponse
@@ -118,32 +149,36 @@ export async function buildGatewayTransaction(
 }
 
 /**
- * Send a transaction through Gateway
- * This delivers the transaction through multiple channels (RPC, Jito, etc.)
+ * Send a transaction through Gateway (CLIENT-SIDE)
+ *
+ * This function calls the Next.js API route which proxies the request to Sanctum Gateway.
+ * This keeps the API key secure on the server-side and avoids CORS issues.
+ *
+ * @param cluster - The Solana cluster (mainnet or devnet)
+ * @param signedTransaction - The base64-encoded signed transaction
+ * @param options - Send options (encoding, start slot, etc.)
+ * @returns The transaction signature from Gateway
  */
 export async function sendGatewayTransaction(
   cluster: GatewayCluster,
-  apiKey: string,
   signedTransaction: string,
   options: SendTransactionOptions = { encoding: 'base64' }
 ): Promise<SendTransactionResponse> {
-  const endpoint = getGatewayEndpoint(cluster, apiKey)
-
-  const response = await fetch(endpoint, {
+  const response = await fetch('/api/gateway/send', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      id: `send-${Date.now()}`,
-      jsonrpc: '2.0',
-      method: 'sendTransaction',
-      params: [signedTransaction, options],
+      cluster,
+      signedTransaction,
+      options,
     }),
   })
 
   if (!response.ok) {
-    throw new Error(`Failed to send gateway transaction: ${response.statusText}`)
+    const errorData = await response.json().catch(() => ({ error: response.statusText }))
+    throw new Error(`Failed to send gateway transaction: ${errorData.error || response.statusText}`)
   }
 
   const data = (await response.json()) as SendTransactionResponse

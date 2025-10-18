@@ -1,85 +1,151 @@
 # Deal - Demo Script for Judges
 
-## Introduction (30 seconds)
+## Introduction (45 seconds)
 
-"Hi judges! I'm excited to present **Deal** - the next evolution of Groupon, but user-owned, borderless, and Web3-powered. We're solving a fundamental problem: traditional discount platforms trap users with non-transferable coupons controlled by centralized databases. Deal transforms every promotion into a collectible, tradable NFT that grants real-world savings - built on Solana."
+"Hi judges. I'm excited to present **Deal**. This is the next evolution of Groupon. User-owned. Borderless. Web3-powered.
+
+We're solving a fundamental problem. Traditional discount platforms trap users with non-transferable coupons. These platforms control everything through centralized databases. Deal transforms every promotion into a collectible NFT. These NFTs grant real-world savings. Built entirely on Solana.
+
+The market opportunity is massive. Groupon processes billions in transactions annually. But users have zero ownership. Merchants have limited control. Deals cannot be transferred. We're changing that with blockchain technology."
 
 ## The Problem (30 seconds)
 
-"Think about the last time you bought a Groupon. You couldn't transfer it if your plans changed. You couldn't verify its authenticity. The company controlled everything. Traditional platforms lack transparency, ownership, and liquidity. We're changing that with blockchain technology."
+"Think about the last time you bought a Groupon. You couldn't transfer it if your plans changed. You couldn't verify its authenticity. The company controlled everything.
+
+Traditional platforms lack transparency. They lack ownership. They lack liquidity. Coupons expire worthless in databases. Users lose money. Merchants lose customers. We're fixing this with Web3."
 
 ## The Solution (1 minute)
 
-"Deal creates a trustless, transparent deal economy where:
-- **Every coupon is a verifiable NFT** - true ownership lives in your wallet
-- **Redemption is tracked on-chain** - immutable proof prevents fraud
-- **Coupons can be transferred or traded** - unused deals aren't wasted
-- **Merchants control issuance** - they set supply limits and expiry dates
-- **Users discover globally** - borderless marketplace powered by Solana"
+"Deal creates a trustless deal economy. Every element is transparent. Everything runs on-chain.
 
-## Live Demo (2.5 minutes)
+Here's how it works. Every coupon is a verifiable NFT. True ownership lives in your wallet. Redemption is tracked on-chain. Immutable proof prevents fraud. Coupons can be transferred freely. They can be traded. Unused deals aren't wasted anymore.
 
-### Part 1: Merchant Flow
-"Let me show you the merchant dashboard. As a coffee shop owner, I'll create a deal:
-- 25% discount on premium lattes
-- Limited to 100 coupons
-- Valid for 30 days
-- Priced at 0.1 SOL
+Merchants maintain full control. They set supply limits. They choose expiry dates. They determine pricing. Users discover deals globally. This is a borderless marketplace. Powered entirely by Solana's speed."
 
-When I click Create Deal, our Anchor smart contract mints this promotion on-chain. The transaction completes in under 400ms thanks to Solana's speed - and we've integrated **Sanctum Gateway** to optimize transaction delivery, ensuring the best chances of landing even during network congestion."
+## Live Demo - Step by Step (3 minutes)
 
-### Part 2: User Experience
-"Now switching to a customer's view. I browse the deals marketplace and find that coffee promotion. I click 'Claim Coupon' and within seconds, I own an NFT in my wallet representing this discount.
+### STEP 1: Navigate to Deals Page
+**ACTION:** Open localhost:3000/deals
 
-Here's where it gets interesting - this isn't just a database entry. I can:
-- View it in any Solana wallet
-- Transfer it to a friend as a gift
-- Potentially resell it on secondary markets
-- Generate a QR code for redemption"
+"I'm starting on the Deals page. This is our main marketplace. You can see all active deals here. Each card shows the merchant. The discount percentage. The price in SOL. Current supply available.
 
-### Part 3: Redemption
-"When I visit the coffee shop, I show my QR code. The merchant scans it, verifies the coupon details on-chain, and redeems it. This single transaction:
-- Marks the coupon as used permanently
-- Prevents double-spending
-- Creates an immutable audit trail
-- Completes in real-time"
+Notice the clean interface. No Web3 complexity visible. Just browse. Click. Own."
 
-## Technical Highlights (45 seconds)
+### STEP 2: Create a Deal (Merchant Flow)
+**ACTION:** Scroll to "Create Deal" section at top of /deals page
 
-"Under the hood, we've built a robust architecture:
+"Now I'll act as a merchant. I'm a coffee shop owner creating a promotion. Watch this form.
 
-**Smart Contracts**: Our Anchor program handles deal creation, coupon minting, redemption verification, and transfers. We use PDA-based accounts for security and enforce all business rules on-chain - supply limits, expiry dates, and redemption status.
+I enter the title: 'Premium Latte 25% Off'.
+Description: 'Enjoy our signature espresso drinks'.
+Category: Food & Dining.
+Discount: 25 percent.
+Max Supply: 100 coupons total.
+Expiry: 30 days from now.
+Price: 0.1 SOL.
 
-**Frontend**: Next.js 15 with React Query for real-time updates. Mobile-first responsive design with QR code generation built-in.
+**ACTION:** Click "Create Deal" button
 
-**Sanctum Gateway Integration**: We've integrated Gateway's `buildGatewayTransaction` and `sendTransaction` APIs across all critical user actions. This gives us real-time transaction observability, automatic retry logic, and cost optimization. Gateway enables us to provide consistent transaction delivery that would be extremely difficult to build ourselves."
+The transaction processes. Our Anchor smart contract mints this on-chain. Notice the speed. Under 400 milliseconds. This is Solana performance.
+
+Here's the critical part. We've integrated **Sanctum Gateway** for transaction delivery. Gateway optimizes how transactions reach validators. It provides automatic retry logic. Cost optimization happens automatically. Real-time observability shows exactly what's happening. This ensures transactions land even during network congestion. Building this ourselves would take months. Gateway gives us production-grade reliability immediately.
+
+**ACTION:** Wait for success toast, scroll down to see new deal appear
+
+The deal now appears in the marketplace. Live. On-chain. Ready for customers."
+
+### STEP 3: Claim a Coupon (User Flow)
+**ACTION:** Find the deal you just created, click "Claim Coupon" button
+
+"Now I'm a customer. I browse the marketplace. I find that coffee deal. I click 'Claim Coupon'.
+
+**ACTION:** Approve wallet transaction
+
+My wallet prompts me. I approve the transaction. Within seconds I own an NFT. This NFT represents my discount. It lives in my wallet. Not in a company database.
+
+**ACTION:** Navigate to localhost:3000/coupons
+
+This is where it gets interesting. Let me go to the Coupons page. Here are all my owned coupons. Each one is a real NFT. I can view it in Phantom. I can view it in Solflare. Any Solana wallet works.
+
+See this Transfer button? I can gift this to a friend. The QR Code button generates a scannable code. Merchants use this for redemption."
+
+### STEP 4: View Coupon Details
+**ACTION:** Click "Show QR Code" on a coupon
+
+"The QR code appears instantly. This contains the coupon's on-chain address. When I visit the coffee shop, I show this. The merchant scans it. They verify everything on-chain. Then they redeem it.
+
+**ACTION:** Click "Redeem" button to demonstrate
+
+Watch this redemption transaction. It marks the coupon as used permanently. It prevents double-spending. It creates an immutable audit trail. Everything happens on-chain. Everything completes in real-time.
+
+The coupon status updates. Now it shows 'Redeemed'. I cannot use it again. The merchant has cryptographic proof. No fraud possible."
+
+### STEP 5: Gateway Monitoring
+**ACTION:** Navigate to localhost:3000/gateway
+
+"This is our Gateway integration dashboard. Here we see transaction monitoring in real-time. Every deal creation. Every coupon mint. Every redemption. Gateway tracks delivery status. We see confirmation times. We see retry attempts. We see cost savings.
+
+This observability is crucial. Traditional Solana apps are blind. Gateway gives us visibility. We can optimize performance. We can debug issues instantly."
+
+## Technical Architecture (45 seconds)
+
+"Under the hood, we've built robust infrastructure.
+
+Our Anchor program handles everything. Deal creation. Coupon minting. Redemption verification. Ownership transfers. We use PDA-based accounts. This ensures security. All business rules enforce on-chain. Supply limits. Expiry dates. Redemption status.
+
+The frontend uses Next.js 15. React Query manages state. Mobile-first responsive design. QR code generation built-in. Everything updates in real-time.
+
+Sanctum Gateway wraps all transactions. We call buildGatewayTransaction first. Then sendTransaction. This gives us enterprise-grade delivery. Automatic optimization. Detailed analytics."
 
 ## Web3 Advantages (30 seconds)
 
-"This is impossible with traditional tech:
-- **True ownership** - coupons live in your wallet, not a company's database
-- **Composability** - our NFTs work with any Solana marketplace
-- **Transparency** - all redemptions are publicly verifiable
-- **Permissionless** - anyone globally can participate
-- **Liquidity** - unused coupons have resale value"
+"This is impossible with traditional technology.
 
-## Future Vision (20 seconds)
+True ownership. Coupons live in your wallet. Not in a company's database. Composability. Our NFTs work with any Solana marketplace. Transparency. All redemptions are publicly verifiable. Permissionless access. Anyone globally can participate. Liquidity. Unused coupons have resale value.
 
-"We're just getting started. Next steps include integrating external deal APIs like Skyscanner and Booking.com, adding social features for viral discovery, implementing loyalty staking rewards, and building geo-based deal recommendations."
+Traditional platforms cannot offer this. Blockchain makes it possible."
 
-## Closing (15 seconds)
+## Future Roadmap (20 seconds)
 
-"Deal reimagines discounts for the Web3 era. We've built a fully functional platform where promotions become assets, merchants maintain control, and users gain unprecedented flexibility. Thank you for your time - I'm happy to answer questions!"
+"We're just getting started.
+
+Next we'll integrate external deal APIs. Skyscanner for flights. Booking.com for hotels. Shopify for products. Social features enable viral discovery. Users can rate deals. Comment on experiences. Share with friends. Loyalty staking rewards long-term users. Geo-based recommendations show nearby deals."
+
+## Closing (20 seconds)
+
+"Deal reimagines discounts for the Web3 era.
+
+We've built a fully functional platform. Promotions become assets. Merchants maintain control. Users gain unprecedented flexibility. Everything runs on Solana. Optimized by Sanctum Gateway.
+
+Thank you for your time. I'm happy to answer questions."
 
 ---
 
-**Total Time: ~5 minutes**
-**Word Count: ~695 words**
+**Total Time: ~6 minutes**
+**Word Count: ~900 words**
+
+## Navigation Cheat Sheet
+
+1. **Start:** localhost:3000/deals (main marketplace)
+2. **Create Deal:** Scroll to top form on /deals page
+3. **View Coupons:** localhost:3000/coupons (your owned NFTs)
+4. **Gateway Dashboard:** localhost:3000/gateway (transaction monitoring)
 
 ## Quick Talking Points for Q&A
 
-- **Metaplex Standard**: We use Token Metadata for NFT compatibility
-- **Security**: PDA-based accounts, merchant verification, on-chain expiry enforcement
-- **Scalability**: Solana's 400ms blocks + Gateway's optimization = production-ready
-- **Bounty Fit**: Addresses all MonkeDAO requirements + meaningful Sanctum Gateway integration
-- **Demo-ready**: Deployed to devnet with working transactions
+**Technical Implementation:**
+- Metaplex Token Metadata standard for NFT compatibility
+- PDA-based accounts for security
+- Merchant verification ensures only deal creators can redeem
+- On-chain expiry enforcement prevents expired coupon usage
+- Solana's 400ms blocks plus Gateway optimization equals production-ready performance
+
+**Bounty Requirements:**
+- MonkeDAO track: All core features implemented. NFT coupons. Merchant dashboard. Redemption flow. Transfer capability.
+- Sanctum Gateway track: Meaningful integration. buildGatewayTransaction and sendTransaction wrapped around all critical operations. Observable delivery. Cost optimization. Real-time monitoring dashboard.
+
+**Deployment Status:**
+- Deployed to devnet with working transactions
+- Smart contracts verified on-chain
+- Frontend hosted and accessible
+- All features functional and tested

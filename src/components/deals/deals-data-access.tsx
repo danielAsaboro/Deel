@@ -52,6 +52,105 @@ export interface Comment {
   createdAt: BN
 }
 
+// Helper function to send transactions via Gateway
+async function sendTransactionViaGateway({
+  transaction,
+  connection,
+  publicKey,
+  signTransaction,
+  gateway,
+  txLabel,
+}: {
+  transaction: Transaction
+  connection: any
+  publicKey: PublicKey
+  signTransaction: ((transaction: Transaction) => Promise<Transaction>) | undefined
+  gateway: any
+  txLabel: string
+}): Promise<string> {
+  // Check if Gateway is enabled and configured
+  if (!gateway.isEnabled || !gateway.apiKey) {
+    throw new Error('Gateway is not enabled or configured')
+  }
+
+  const txId = `${txLabel}-${Date.now()}`
+
+  try {
+    // Track the transaction
+    gatewayTransactionTracker.start(txId, {
+      deliveryMethod: gateway.config.deliveryMethodType,
+      cuPriceRange: gateway.config.cuPriceRange,
+      jitoTipRange: gateway.config.jitoTipRange,
+    })
+
+    toast.info('Building transaction with Gateway...')
+
+    // Get recent blockhash (Gateway will replace this)
+    const { blockhash } = await connection.getLatestBlockhash()
+    transaction.recentBlockhash = blockhash
+    transaction.feePayer = publicKey
+
+    gatewayTransactionTracker.update(txId, { status: 'building' })
+
+    // Use Gateway to optimize the transaction
+    const cluster = gateway.getCluster()
+    if (!cluster) {
+      throw new Error('Gateway is not supported on this cluster. Please switch to devnet or mainnet.')
+    }
+
+    const buildResponse = await buildGatewayTransaction(
+      cluster,
+      transaction,
+      gateway.getBuildOptions()
+    )
+
+    toast.info('Signing optimized transaction...')
+    gatewayTransactionTracker.update(txId, { status: 'signing' })
+
+    // Decode and sign the optimized transaction
+    const optimizedTxBuffer = Buffer.from(buildResponse.result.transaction, 'base64')
+    const optimizedTx = Transaction.from(optimizedTxBuffer)
+
+    if (!signTransaction) {
+      throw new Error('Wallet does not support transaction signing')
+    }
+
+    const signedTx = await signTransaction(optimizedTx)
+    const signedTxBase64 = Buffer.from(signedTx.serialize()).toString('base64')
+
+    toast.info('Sending transaction via Gateway...')
+    gatewayTransactionTracker.update(txId, { status: 'sending' })
+
+    // Send through Gateway
+    const sendResponse = await sendGatewayTransaction(
+      cluster,
+      signedTxBase64,
+      { encoding: 'base64' }
+    )
+
+    if (!sendResponse.result) {
+      throw new Error('No signature returned from Gateway')
+    }
+
+    const signature = sendResponse.result
+
+    gatewayTransactionTracker.update(txId, {
+      status: 'success',
+      signature,
+    })
+
+    toast.success('Transaction sent via Gateway!')
+    return signature
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    gatewayTransactionTracker.update(txId, {
+      status: 'failed',
+      error: errorMessage,
+    })
+    throw error
+  }
+}
+
 export function useDealsProgram() {
   const { connection } = useConnection()
   const { publicKey, signTransaction } = useWallet()
@@ -154,14 +253,18 @@ export function useDealsProgram() {
           // Get recent blockhash (Gateway will replace this)
           const { blockhash } = await connection.getLatestBlockhash()
           tx.recentBlockhash = blockhash
-          tx.feePayer = provider.publicKey
+          tx.feePayer = publicKey
 
           gatewayTransactionTracker.update(txId, { status: 'building' })
 
           // Use Gateway to optimize the transaction
+          const cluster = gateway.getCluster()
+          if (!cluster) {
+            throw new Error('Gateway is not supported on this cluster. Please switch to devnet or mainnet.')
+          }
+
           const buildResponse = await buildGatewayTransaction(
-            gateway.getCluster(),
-            gateway.apiKey,
+            cluster,
             tx,
             gateway.getBuildOptions()
           )
@@ -185,8 +288,7 @@ export function useDealsProgram() {
 
           // Send through Gateway
           const sendResponse = await sendGatewayTransaction(
-            gateway.getCluster(),
-            gateway.apiKey,
+            cluster,
             signedTxBase64,
             { encoding: 'base64' }
           )
@@ -261,16 +363,43 @@ export function useDealsProgram() {
     }) => {
       if (!publicKey) throw new Error('Wallet not connected')
 
-      const signature = await program.methods
-        .updateDeal(
-          isActive !== undefined ? isActive : null,
-          priceLamports !== undefined ? new BN(priceLamports) : null
-        )
-        .accountsPartial({
-          deal: dealAddress,
-          merchant: publicKey,
+      let signature: string
+
+      // Check if Gateway is enabled
+      if (gateway.isEnabled && gateway.apiKey) {
+        const tx = await program.methods
+          .updateDeal(
+            isActive !== undefined ? isActive : null,
+            priceLamports !== undefined ? new BN(priceLamports) : null
+          )
+          .accountsPartial({
+            deal: dealAddress,
+            merchant: publicKey,
+          })
+          .transaction()
+
+        signature = await sendTransactionViaGateway({
+          transaction: tx,
+          connection,
+          publicKey,
+          signTransaction,
+          gateway,
+          txLabel: 'update-deal',
         })
-        .rpc()
+      } else {
+        // Fallback to standard RPC
+        toast.info('Sending transaction via standard RPC...')
+        signature = await program.methods
+          .updateDeal(
+            isActive !== undefined ? isActive : null,
+            priceLamports !== undefined ? new BN(priceLamports) : null
+          )
+          .accountsPartial({
+            deal: dealAddress,
+            merchant: publicKey,
+          })
+          .rpc()
+      }
 
       return signature
     },
@@ -339,24 +468,61 @@ export function useDealsProgram() {
         TOKEN_METADATA_PROGRAM_ID
       )
 
-      const signature = await program.methods
-        .mintCoupon(dealAddress, metadataUri)
-        .accountsPartial({
-          deal: dealAddress,
-          coupon: couponPda,
-          mint: mintKeypair.publicKey,
-          tokenAccount: userTokenAccount,
-          metadata: metadataPda,
-          merchant: dealAccount.merchant,
-          user: publicKey,
-          rent: SYSVAR_RENT_PUBKEY,
-          systemProgram: SystemProgram.programId,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-          tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
+      let signature: string
+
+      // Check if Gateway is enabled
+      if (gateway.isEnabled && gateway.apiKey) {
+        const tx = await program.methods
+          .mintCoupon(dealAddress, metadataUri)
+          .accountsPartial({
+            deal: dealAddress,
+            coupon: couponPda,
+            mint: mintKeypair.publicKey,
+            tokenAccount: userTokenAccount,
+            metadata: metadataPda,
+            merchant: dealAccount.merchant,
+            user: publicKey,
+            rent: SYSVAR_RENT_PUBKEY,
+            systemProgram: SystemProgram.programId,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+            tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
+          })
+          .transaction()
+
+        // Add the mint keypair as a signer
+        tx.partialSign(mintKeypair)
+
+        signature = await sendTransactionViaGateway({
+          transaction: tx,
+          connection,
+          publicKey,
+          signTransaction,
+          gateway,
+          txLabel: 'mint-coupon',
         })
-        .signers([mintKeypair])
-        .rpc()
+      } else {
+        // Fallback to standard RPC
+        toast.info('Sending transaction via standard RPC...')
+        signature = await program.methods
+          .mintCoupon(dealAddress, metadataUri)
+          .accountsPartial({
+            deal: dealAddress,
+            coupon: couponPda,
+            mint: mintKeypair.publicKey,
+            tokenAccount: userTokenAccount,
+            metadata: metadataPda,
+            merchant: dealAccount.merchant,
+            user: publicKey,
+            rent: SYSVAR_RENT_PUBKEY,
+            systemProgram: SystemProgram.programId,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+            tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
+          })
+          .signers([mintKeypair])
+          .rpc()
+      }
 
       return signature
     },
@@ -381,15 +547,41 @@ export function useDealsProgram() {
         program.programId
       )
 
-      const signature = await program.methods
-        .rateDeal(rating)
-        .accountsPartial({
-          deal: dealAddress,
-          dealRating: ratingPda,
-          user: publicKey,
-          systemProgram: SystemProgram.programId,
+      let signature: string
+
+      // Check if Gateway is enabled
+      if (gateway.isEnabled && gateway.apiKey) {
+        const tx = await program.methods
+          .rateDeal(rating)
+          .accountsPartial({
+            deal: dealAddress,
+            dealRating: ratingPda,
+            user: publicKey,
+            systemProgram: SystemProgram.programId,
+          })
+          .transaction()
+
+        signature = await sendTransactionViaGateway({
+          transaction: tx,
+          connection,
+          publicKey,
+          signTransaction,
+          gateway,
+          txLabel: 'rate-deal',
         })
-        .rpc()
+      } else {
+        // Fallback to standard RPC
+        toast.info('Sending transaction via standard RPC...')
+        signature = await program.methods
+          .rateDeal(rating)
+          .accountsPartial({
+            deal: dealAddress,
+            dealRating: ratingPda,
+            user: publicKey,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc()
+      }
 
       return signature
     },
@@ -421,15 +613,41 @@ export function useDealsProgram() {
         program.programId
       )
 
-      const signature = await program.methods
-        .addComment(new BN(timestamp), content)
-        .accountsPartial({
-          deal: dealAddress,
-          comment: commentPda,
-          author: publicKey,
-          systemProgram: SystemProgram.programId,
+      let signature: string
+
+      // Check if Gateway is enabled
+      if (gateway.isEnabled && gateway.apiKey) {
+        const tx = await program.methods
+          .addComment(new BN(timestamp), content)
+          .accountsPartial({
+            deal: dealAddress,
+            comment: commentPda,
+            author: publicKey,
+            systemProgram: SystemProgram.programId,
+          })
+          .transaction()
+
+        signature = await sendTransactionViaGateway({
+          transaction: tx,
+          connection,
+          publicKey,
+          signTransaction,
+          gateway,
+          txLabel: 'add-comment',
         })
-        .rpc()
+      } else {
+        // Fallback to standard RPC
+        toast.info('Sending transaction via standard RPC...')
+        signature = await program.methods
+          .addComment(new BN(timestamp), content)
+          .accountsPartial({
+            deal: dealAddress,
+            comment: commentPda,
+            author: publicKey,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc()
+      }
 
       return signature
     },
@@ -475,15 +693,41 @@ export function useDealsProgram() {
         program.programId
       )
 
-      const signature = await program.methods
-        .listCoupon(new BN(priceLamports))
-        .accountsPartial({
-          coupon: couponAddress,
-          listing: listingPda,
-          seller: publicKey,
-          systemProgram: SystemProgram.programId,
+      let signature: string
+
+      // Check if Gateway is enabled
+      if (gateway.isEnabled && gateway.apiKey) {
+        const tx = await program.methods
+          .listCoupon(new BN(priceLamports))
+          .accountsPartial({
+            coupon: couponAddress,
+            listing: listingPda,
+            seller: publicKey,
+            systemProgram: SystemProgram.programId,
+          })
+          .transaction()
+
+        signature = await sendTransactionViaGateway({
+          transaction: tx,
+          connection,
+          publicKey,
+          signTransaction,
+          gateway,
+          txLabel: 'list-coupon',
         })
-        .rpc()
+      } else {
+        // Fallback to standard RPC
+        toast.info('Sending transaction via standard RPC...')
+        signature = await program.methods
+          .listCoupon(new BN(priceLamports))
+          .accountsPartial({
+            coupon: couponAddress,
+            listing: listingPda,
+            seller: publicKey,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc()
+      }
 
       return signature
     },
@@ -505,17 +749,45 @@ export function useDealsProgram() {
       // Fetch listing to get coupon and seller
       const listingAccount = await program.account.listing.fetch(listingAddress)
 
-      const signature = await program.methods
-        .buyCoupon()
-        .accountsPartial({
-          listing: listingAddress,
-          coupon: listingAccount.coupon,
-          seller: listingAccount.seller,
-          buyer: publicKey,
-          platformWallet: platformWallet,
-          systemProgram: SystemProgram.programId,
+      let signature: string
+
+      // Check if Gateway is enabled
+      if (gateway.isEnabled && gateway.apiKey) {
+        const tx = await program.methods
+          .buyCoupon()
+          .accountsPartial({
+            listing: listingAddress,
+            coupon: listingAccount.coupon,
+            seller: listingAccount.seller,
+            buyer: publicKey,
+            platformWallet: platformWallet,
+            systemProgram: SystemProgram.programId,
+          })
+          .transaction()
+
+        signature = await sendTransactionViaGateway({
+          transaction: tx,
+          connection,
+          publicKey,
+          signTransaction,
+          gateway,
+          txLabel: 'buy-coupon',
         })
-        .rpc()
+      } else {
+        // Fallback to standard RPC
+        toast.info('Sending transaction via standard RPC...')
+        signature = await program.methods
+          .buyCoupon()
+          .accountsPartial({
+            listing: listingAddress,
+            coupon: listingAccount.coupon,
+            seller: listingAccount.seller,
+            buyer: publicKey,
+            platformWallet: platformWallet,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc()
+      }
 
       return signature
     },
@@ -534,14 +806,39 @@ export function useDealsProgram() {
     mutationFn: async ({ listingAddress, couponAddress }: { listingAddress: PublicKey; couponAddress: PublicKey }) => {
       if (!publicKey) throw new Error('Wallet not connected')
 
-      const signature = await program.methods
-        .delistCoupon()
-        .accountsPartial({
-          listing: listingAddress,
-          coupon: couponAddress,
-          seller: publicKey,
+      let signature: string
+
+      // Check if Gateway is enabled
+      if (gateway.isEnabled && gateway.apiKey) {
+        const tx = await program.methods
+          .delistCoupon()
+          .accountsPartial({
+            listing: listingAddress,
+            coupon: couponAddress,
+            seller: publicKey,
+          })
+          .transaction()
+
+        signature = await sendTransactionViaGateway({
+          transaction: tx,
+          connection,
+          publicKey,
+          signTransaction,
+          gateway,
+          txLabel: 'delist-coupon',
         })
-        .rpc()
+      } else {
+        // Fallback to standard RPC
+        toast.info('Sending transaction via standard RPC...')
+        signature = await program.methods
+          .delistCoupon()
+          .accountsPartial({
+            listing: listingAddress,
+            coupon: couponAddress,
+            seller: publicKey,
+          })
+          .rpc()
+      }
 
       return signature
     },
