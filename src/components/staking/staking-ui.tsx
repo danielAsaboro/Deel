@@ -6,10 +6,13 @@ import { Badge } from '@/components/ui/badge'
 import { RewardsPool, CouponWithStaking } from './staking-data-access'
 import { LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { useUsdcPrice } from '@/hooks/use-usdc-price'
 
 export function RewardsPoolInfo({ pool }: { pool: RewardsPool }) {
-  const formatSOL = (lamports: number) => {
-    return (lamports / LAMPORTS_PER_SOL).toFixed(6)
+  const { lamportsToUsdc } = useUsdcPrice()
+
+  const formatUSDC = (lamports: number) => {
+    return lamportsToUsdc(lamports).toFixed(2)
   }
 
   return (
@@ -27,14 +30,14 @@ export function RewardsPoolInfo({ pool }: { pool: RewardsPool }) {
           </div>
           <div>
             <p className="text-sm text-muted-foreground">Daily Reward Rate</p>
-            <p className="text-2xl font-bold">{formatSOL(pool.rewardRatePerDay.toNumber())}</p>
-            <p className="text-xs text-muted-foreground">SOL per day</p>
+            <p className="text-2xl font-bold">${formatUSDC(pool.rewardRatePerDay.toNumber())}</p>
+            <p className="text-xs text-muted-foreground">USDC per day</p>
           </div>
         </div>
 
         <Alert>
           <AlertDescription>
-            Stake your unredeemed coupons to earn {formatSOL(pool.rewardRatePerDay.toNumber())} SOL
+            Stake your unredeemed coupons to earn ${formatUSDC(pool.rewardRatePerDay.toNumber())} USDC
             per day. You can claim rewards anytime or unstake to get your coupon back.
           </AlertDescription>
         </Alert>
@@ -56,8 +59,10 @@ export function StakingCouponsManager({
   onClaim: (stakedCouponPubkey: PublicKey) => void
   isLoading: boolean
 }) {
-  const formatSOL = (lamports: number) => {
-    return (lamports / LAMPORTS_PER_SOL).toFixed(6)
+  const { lamportsToUsdc } = useUsdcPrice()
+
+  const formatUSDC = (lamports: number) => {
+    return lamportsToUsdc(lamports).toFixed(2)
   }
 
   const formatTimeStaked = (stakedAt: number) => {
@@ -115,7 +120,7 @@ export function StakingCouponsManager({
                     <div>
                       <p className="text-xs text-muted-foreground">Pending Rewards</p>
                       <p className="text-lg font-bold text-primary">
-                        {formatSOL(coupon.pendingRewards)} SOL
+                        ${formatUSDC(coupon.pendingRewards)} USDC
                       </p>
                     </div>
                     <div>
@@ -141,7 +146,7 @@ export function StakingCouponsManager({
                       className="flex-1"
                     >
                       Claim Rewards
-                      {coupon.pendingRewards > 0 && ` (${formatSOL(coupon.pendingRewards)} SOL)`}
+                      {coupon.pendingRewards > 0 && ` ($${formatUSDC(coupon.pendingRewards)} USDC)`}
                     </Button>
                     <Button
                       variant="outline"

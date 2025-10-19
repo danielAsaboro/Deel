@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Listing, CouponWithListing } from './marketplace-data-access'
 import { LAMPORTS_PER_SOL, PublicKey, Keypair } from '@solana/web3.js'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { useUsdcPrice } from '@/hooks/use-usdc-price'
 
 // Platform wallet for receiving fees - replace with real wallet for production
 const PLATFORM_WALLET = Keypair.generate().publicKey
@@ -22,8 +23,10 @@ export function MarketplaceListings({
   onBuy: (listing: Listing) => void
   isLoading: boolean
 }) {
-  const formatSOL = (lamports: number) => {
-    return (lamports / LAMPORTS_PER_SOL).toFixed(4)
+  const { lamportsToUsdc } = useUsdcPrice()
+
+  const formatUSDC = (lamports: number) => {
+    return lamportsToUsdc(lamports).toFixed(2)
   }
 
   if (listings.length === 0) {
@@ -48,7 +51,7 @@ export function MarketplaceListings({
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <p className="text-2xl font-bold">{formatSOL(listing.priceLamports.toNumber())} SOL</p>
+              <p className="text-2xl font-bold">${formatUSDC(listing.priceLamports.toNumber())} USDC</p>
               <p className="text-xs text-muted-foreground mt-1">
                 Seller: {listing.seller.toString().slice(0, 8)}...
               </p>
@@ -78,14 +81,15 @@ export function UserCouponsManager({
   onDelist: (listingPubkey: PublicKey, couponPubkey: PublicKey) => void
   isLoading: boolean
 }) {
+  const { usdcToLamports, lamportsToUsdc } = useUsdcPrice()
   const [listingPrices, setListingPrices] = useState<Record<string, string>>({})
 
   const handleList = (couponPubkey: PublicKey) => {
-    const priceSOL = listingPrices[couponPubkey.toString()]
-    if (!priceSOL || parseFloat(priceSOL) <= 0) {
+    const priceUSDC = listingPrices[couponPubkey.toString()]
+    if (!priceUSDC || parseFloat(priceUSDC) <= 0) {
       return
     }
-    const priceLamports = parseFloat(priceSOL) * LAMPORTS_PER_SOL
+    const priceLamports = usdcToLamports(parseFloat(priceUSDC))
     onList(couponPubkey, priceLamports)
     setListingPrices({ ...listingPrices, [couponPubkey.toString()]: '' })
   }
@@ -102,7 +106,7 @@ export function UserCouponsManager({
 
   return (
     <div className="space-y-4">
-      {coupons.map((coupon) => (
+      {coupons.filter((coupon) => coupon.couponPublicKey).map((coupon) => (
         <Card key={coupon.couponPublicKey.toString()}>
           <CardContent className="py-4">
             <div className="flex items-center justify-between gap-4">
@@ -116,7 +120,7 @@ export function UserCouponsManager({
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Mint: {coupon.mint.toString().slice(0, 16)}...
+                  Mint: {coupon.mint?.toString().slice(0, 16)}...
                 </p>
               </div>
 
@@ -124,7 +128,7 @@ export function UserCouponsManager({
                 <div className="flex items-center gap-2">
                   <div className="text-right">
                     <p className="text-sm font-bold">
-                      {(coupon.listing.priceLamports.toNumber() / LAMPORTS_PER_SOL).toFixed(4)} SOL
+                      ${lamportsToUsdc(coupon.listing.priceLamports.toNumber()).toFixed(2)} USDC
                     </p>
                     <p className="text-xs text-muted-foreground">Listed price</p>
                   </div>
@@ -152,14 +156,14 @@ export function UserCouponsManager({
                     <div className="space-y-4 py-4">
                       <div className="space-y-2">
                         <Label htmlFor={`price-${coupon.couponPublicKey.toString()}`}>
-                          Price (SOL)
+                          Price (USDC)
                         </Label>
                         <Input
                           id={`price-${coupon.couponPublicKey.toString()}`}
                           type="number"
-                          step="0.001"
-                          min="0.001"
-                          placeholder="0.05"
+                          step="0.01"
+                          min="0.01"
+                          placeholder="10.00"
                           value={listingPrices[coupon.couponPublicKey.toString()] || ''}
                           onChange={(e) =>
                             setListingPrices({
@@ -174,18 +178,18 @@ export function UserCouponsManager({
                         <div className="space-y-1 text-muted-foreground">
                           <div className="flex justify-between">
                             <span>List price:</span>
-                            <span>{listingPrices[coupon.couponPublicKey.toString()] || '0'} SOL</span>
+                            <span>${listingPrices[coupon.couponPublicKey.toString()] || '0'} USDC</span>
                           </div>
                           <div className="flex justify-between">
                             <span>You receive (97.5%):</span>
                             <span>
-                              {(parseFloat(listingPrices[coupon.couponPublicKey.toString()] || '0') * 0.975).toFixed(4)} SOL
+                              ${(parseFloat(listingPrices[coupon.couponPublicKey.toString()] || '0') * 0.975).toFixed(2)} USDC
                             </span>
                           </div>
                           <div className="flex justify-between">
                             <span>Platform fee (2.5%):</span>
                             <span>
-                              {(parseFloat(listingPrices[coupon.couponPublicKey.toString()] || '0') * 0.025).toFixed(4)} SOL
+                              ${(parseFloat(listingPrices[coupon.couponPublicKey.toString()] || '0') * 0.025).toFixed(2)} USDC
                             </span>
                           </div>
                         </div>

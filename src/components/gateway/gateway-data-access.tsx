@@ -17,6 +17,7 @@ import { useCluster } from '@/components/cluster/cluster-data-access'
  */
 export interface GatewayConfig {
   enabled: boolean
+  bypassGateway: boolean // When true, all transactions use direct RPC instead of Gateway
   apiKey: string | null
   deliveryMethodType: DeliveryMethodType
   cuPriceRange: FeeRange
@@ -32,6 +33,7 @@ export interface GatewayConfig {
  */
 const defaultGatewayConfig: GatewayConfig = {
   enabled: true, // Enabled by default for judges to see it in action
+  bypassGateway: false, // By default, use Gateway (not bypassed)
   apiKey: null,
   deliveryMethodType: 'sanctum-sender', // Default to Sanctum Sender (dual-path)
   cuPriceRange: 'medium',
@@ -50,6 +52,8 @@ const gatewayEnabledAtom = atom(
   (get) => {
     const config = get(gatewayConfigAtom)
     const apiKey = process.env.NEXT_PUBLIC_GATEWAY_API_KEY || config.apiKey
+    // If bypass is enabled, Gateway is effectively disabled
+    if (config.bypassGateway) return false
     return config.enabled && !!apiKey
   },
   (get, set, enabled: boolean) => {
@@ -62,9 +66,11 @@ export interface GatewayProviderContext {
   config: GatewayConfig
   isEnabled: boolean
   isSupported: boolean // Whether Gateway is supported on current cluster
+  isBypassed: boolean // Whether Gateway is currently bypassed
   apiKey: string | null
   updateConfig: (updates: Partial<GatewayConfig>) => void
   toggleEnabled: () => void
+  toggleBypass: () => void
   getBuildOptions: () => BuildGatewayTransactionOptions
   getCluster: () => GatewayCluster | null // null if not supported
   resetConfig: () => void
@@ -109,12 +115,16 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
     config,
     isEnabled: isEnabled && !!apiKey && isSupported,
     isSupported,
+    isBypassed: config.bypassGateway,
     apiKey,
     updateConfig: (updates) => {
       setConfig({ ...config, ...updates })
     },
     toggleEnabled: () => {
       setIsEnabled(!isEnabled)
+    },
+    toggleBypass: () => {
+      setConfig({ ...config, bypassGateway: !config.bypassGateway })
     },
     getBuildOptions: (): BuildGatewayTransactionOptions => {
       // Sanctum Sender only works on mainnet - use RPC for devnet

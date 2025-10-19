@@ -14,20 +14,23 @@ import { Calendar, Tag, TrendingDown, Package, ExternalLink, Globe, Star, Messag
 import { ExternalDeal } from '@/types/external-deals'
 import { Textarea } from '../ui/textarea'
 import { toast } from 'sonner'
+import { useUsdcPrice } from '@/hooks/use-usdc-price'
 
 export function DealsCreate() {
   const { createDeal } = useDealsProgram()
+  const { usdcToLamports } = useUsdcPrice()
   const [isOpen, setIsOpen] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [discountPercent, setDiscountPercent] = useState(10)
   const [maxSupply, setMaxSupply] = useState(100)
   const [category, setCategory] = useState('')
-  const [priceLamports, setPriceLamports] = useState(1000000)
+  const [priceUsdc, setPriceUsdc] = useState(1)
   const [expiryDays, setExpiryDays] = useState(30)
 
   const handleSubmit = () => {
     const expiryTimestamp = Math.floor(Date.now() / 1000) + expiryDays * 24 * 60 * 60
+    const priceLamports = usdcToLamports(priceUsdc)
     createDeal.mutateAsync({
       title,
       description,
@@ -101,12 +104,13 @@ export function DealsCreate() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="price">Price (lamports)</Label>
+              <Label htmlFor="price">Price (USDC)</Label>
               <Input
                 id="price"
                 type="number"
-                value={priceLamports}
-                onChange={(e) => setPriceLamports(Number(e.target.value))}
+                step="0.01"
+                value={priceUsdc}
+                onChange={(e) => setPriceUsdc(Number(e.target.value))}
                 min="0"
               />
             </div>
@@ -158,6 +162,7 @@ function StarRating({ value, onChange, readonly = false }: { value: number; onCh
 
 export function DealCard({ deal }: { deal: Deal }) {
   const { mintCoupon, updateDeal, rateDeal, addComment, useCommentsByDeal } = useDealsProgram()
+  const { lamportsToUsdc } = useUsdcPrice()
   const { publicKey } = useWallet()
   const isMerchant = publicKey && deal.merchant.equals(publicKey)
   const [showComments, setShowComments] = useState(false)
@@ -266,7 +271,7 @@ export function DealCard({ deal }: { deal: Deal }) {
 
         <div className="flex items-center justify-between">
           <div className="text-sm font-medium">
-            Price: {(deal.priceLamports.toNumber() / 1e9).toFixed(4)} SOL
+            Price: ${lamportsToUsdc(deal.priceLamports.toNumber()).toFixed(2)} USDC
           </div>
           <div className="flex gap-2">
             <Button size="sm" variant="ghost" onClick={() => setShowComments(!showComments)}>
@@ -351,14 +356,16 @@ export function DealCard({ deal }: { deal: Deal }) {
 // External Deal Card Component
 export function ExternalDealCard({ deal }: { deal: ExternalDeal }) {
   const { createDeal } = useDealsProgram()
+  const { usdcToLamports } = useUsdcPrice()
   const { publicKey } = useWallet()
   const [showImportDialog, setShowImportDialog] = useState(false)
   const [maxSupply, setMaxSupply] = useState(100)
   const [expiryDays, setExpiryDays] = useState(30)
-  const [priceLamports, setPriceLamports] = useState(100000000) // 0.1 SOL
+  const [priceUsdc, setPriceUsdc] = useState(20)
 
   const handleImport = async () => {
     const expiryTimestamp = Math.floor(Date.now() / 1000) + expiryDays * 24 * 60 * 60
+    const priceLamports = usdcToLamports(priceUsdc)
     await createDeal.mutateAsync({
       title: deal.title,
       description: deal.description,
@@ -470,16 +477,17 @@ export function ExternalDealCard({ deal }: { deal: ExternalDeal }) {
             />
           </div>
           <div>
-            <Label htmlFor="price">Coupon Price (lamports)</Label>
+            <Label htmlFor="price">Coupon Price (USDC)</Label>
             <Input
               id="price"
               type="number"
-              value={priceLamports}
-              onChange={(e) => setPriceLamports(Number(e.target.value))}
+              step="0.01"
+              value={priceUsdc}
+              onChange={(e) => setPriceUsdc(Number(e.target.value))}
               min="0"
             />
             <div className="text-xs text-muted-foreground mt-1">
-              {(priceLamports / 1e9).toFixed(4)} SOL
+              ${priceUsdc.toFixed(2)} USDC
             </div>
           </div>
           <div>

@@ -197,13 +197,13 @@ export async function sendGatewayTransaction(
  */
 export async function processGatewayTransaction(
   cluster: GatewayCluster,
-  apiKey: string,
+  _apiKey: string,
   transaction: Transaction | VersionedTransaction,
   _signTransaction: (tx: Transaction | VersionedTransaction) => Promise<Transaction | VersionedTransaction>,
   buildOptions?: BuildGatewayTransactionOptions
 ): Promise<{ signature: string; response: SendTransactionResponse }> {
   // Step 1: Build the transaction with Gateway optimizations
-  const buildResponse = await buildGatewayTransaction(cluster, apiKey, transaction, buildOptions)
+  const buildResponse = await buildGatewayTransaction(cluster, transaction, buildOptions)
 
   // Step 2: Return the response for manual signing in the hook
   // Note: The actual signing depends on whether it's a legacy or versioned transaction
@@ -233,7 +233,7 @@ export interface TransactionMetrics {
   cuPriceRange?: FeeRange
   jitoTipRange?: JitoTipRange
   error?: string
-  // Cost tracking fields
+  // Cost tracking fields (stored in lamports, displayed in USDC in UI)
   jitoTipPaid?: number // in lamports
   jitoTipRefunded?: boolean
   priorityFeePaid?: number // in lamports
@@ -243,6 +243,7 @@ export interface TransactionMetrics {
 
 /**
  * Aggregate statistics for cost analysis
+ * Note: All cost values are in lamports. UI displays them in USDC for user convenience.
  */
 export interface CostStatistics {
   totalTransactions: number

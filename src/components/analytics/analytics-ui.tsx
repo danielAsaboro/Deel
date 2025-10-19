@@ -6,16 +6,19 @@ import { Badge } from '@/components/ui/badge'
 import { MerchantAnalytics } from './analytics-data-access'
 import { LAMPORTS_PER_SOL } from '@solana/web3.js'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { useUsdcPrice } from '@/hooks/use-usdc-price'
 
 export function AnalyticsDashboard({ analytics }: { analytics: MerchantAnalytics }) {
-  const formatSOL = (lamports: number) => {
-    return (lamports / LAMPORTS_PER_SOL).toFixed(4)
+  const { lamportsToUsdc } = useUsdcPrice()
+
+  const formatUSDC = (lamports: number) => {
+    return lamportsToUsdc(lamports).toFixed(2)
   }
 
   // Prepare chart data
   const revenueChartData = analytics.dealPerformance.map(deal => ({
     name: deal.dealTitle.length > 20 ? deal.dealTitle.substring(0, 20) + '...' : deal.dealTitle,
-    revenue: parseFloat(formatSOL(deal.revenue.toNumber())),
+    revenue: parseFloat(formatUSDC(deal.revenue.toNumber())),
     minted: deal.couponsMinted,
   }))
 
@@ -40,7 +43,7 @@ export function AnalyticsDashboard({ analytics }: { analytics: MerchantAnalytics
         />
         <MetricCard
           title="Total Revenue"
-          value={`${formatSOL(analytics.totalRevenue.toNumber())} SOL`}
+          value={`$${formatUSDC(analytics.totalRevenue.toNumber())} USDC`}
           subtitle="From coupon sales"
         />
         <MetricCard
@@ -63,13 +66,13 @@ export function AnalyticsDashboard({ analytics }: { analytics: MerchantAnalytics
                 <BarChart data={revenueChartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} className="text-xs" />
-                  <YAxis label={{ value: 'SOL', angle: -90, position: 'insideLeft' }} className="text-xs" />
+                  <YAxis label={{ value: 'USDC', angle: -90, position: 'insideLeft' }} className="text-xs" />
                   <Tooltip
                     contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
                     labelStyle={{ color: 'hsl(var(--foreground))' }}
                   />
                   <Legend />
-                  <Bar dataKey="revenue" fill="#8b5cf6" name="Revenue (SOL)" />
+                  <Bar dataKey="revenue" fill="#8b5cf6" name="Revenue (USDC)" />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
@@ -121,7 +124,7 @@ export function AnalyticsDashboard({ analytics }: { analytics: MerchantAnalytics
                 <TableRow>
                   <TableHead>Deal Title</TableHead>
                   <TableHead className="text-right">Minted</TableHead>
-                  <TableHead className="text-right">Revenue (SOL)</TableHead>
+                  <TableHead className="text-right">Revenue (USDC)</TableHead>
                   <TableHead className="text-right">Redemption Rate</TableHead>
                   <TableHead className="text-right">Rating</TableHead>
                   <TableHead className="text-right">Comments</TableHead>
@@ -133,7 +136,7 @@ export function AnalyticsDashboard({ analytics }: { analytics: MerchantAnalytics
                     <TableCell className="font-medium">{deal.dealTitle}</TableCell>
                     <TableCell className="text-right">{deal.couponsMinted}</TableCell>
                     <TableCell className="text-right">
-                      {formatSOL(deal.revenue.toNumber())}
+                      ${formatUSDC(deal.revenue.toNumber())}
                     </TableCell>
                     <TableCell className="text-right">
                       <Badge variant={deal.redemptionRate > 50 ? 'default' : 'secondary'}>
@@ -180,11 +183,11 @@ export function AnalyticsDashboard({ analytics }: { analytics: MerchantAnalytics
             <span className="text-muted-foreground">Average Revenue per Customer</span>
             <span className="text-2xl font-bold">
               {analytics.totalCustomers > 0
-                ? formatSOL(
+                ? `$${formatUSDC(
                     analytics.totalRevenue.toNumber() / analytics.totalCustomers
-                  )
-                : '0'}{' '}
-              SOL
+                  )}`
+                : '$0'}{' '}
+              USDC
             </span>
           </div>
         </CardContent>

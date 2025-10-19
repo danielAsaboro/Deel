@@ -150,7 +150,9 @@ echo ""
 if [ "$NETWORK" = "localnet" ]; then
     echo -e "${BLUE}🚀 Starting local validator...${NC}"
     cd anchor
-    solana-test-validator --reset --quiet &
+    solana-test-validator --reset --quiet \
+      --clone-upgradeable-program metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s \
+      --url devnet &
     VALIDATOR_PID=$!
     cd ..
     echo -e "${CYAN}   Validator PID: $VALIDATOR_PID${NC}"

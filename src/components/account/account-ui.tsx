@@ -22,13 +22,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { AppModal } from '@/components/app-modal'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useUsdcPrice } from '@/hooks/use-usdc-price'
 
 export function AccountBalance({ address }: { address: PublicKey }) {
   const query = useGetBalance({ address })
 
   return (
     <h1 className="text-5xl font-bold cursor-pointer" onClick={() => query.refetch()}>
-      {query.data ? <BalanceSol balance={query.data} /> : '...'} SOL
+      {query.data ? <BalanceUsdc balance={query.data} /> : '...'} USDC
     </h1>
   )
 }
@@ -246,8 +247,9 @@ export function AccountTransactions({ address }: { address: PublicKey }) {
   )
 }
 
-function BalanceSol({ balance }: { balance: number }) {
-  return <span>{Math.round((balance / LAMPORTS_PER_SOL) * 100000) / 100000}</span>
+function BalanceUsdc({ balance }: { balance: number }) {
+  const { lamportsToUsdc } = useUsdcPrice()
+  return <span>${lamportsToUsdc(balance).toFixed(2)}</span>
 }
 
 function ModalReceive({ address }: { address: PublicKey }) {

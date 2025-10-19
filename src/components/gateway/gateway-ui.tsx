@@ -49,36 +49,36 @@ export function GatewayConfigPanel() {
           </div>
         )}
 
-        {/* Gateway Toggle */}
-        <div className="flex items-center justify-between">
-          <div className="space-y-0.5">
-            <Label htmlFor="gateway-enabled" className="text-base">
-              Enable Gateway
-            </Label>
-            <p className="text-sm text-muted-foreground">
-              {!gateway.isSupported
-                ? `Not available on ${cluster.name}`
-                : gateway.apiKey
-                  ? 'Route transactions through Sanctum Gateway'
-                  : 'API key required'}
-            </p>
-          </div>
-          <div className="flex items-center space-x-2">
-            <input
-              id="gateway-enabled"
-              type="checkbox"
-              checked={gateway.isEnabled}
-              onChange={() => gateway.toggleEnabled()}
-              disabled={!gateway.apiKey || !gateway.isSupported}
-              className="w-4 h-4 text-primary bg-background border-gray-300 rounded focus:ring-primary disabled:opacity-50"
-            />
-            <span className="text-sm">
-              {gateway.isEnabled ? (
-                <span className="text-green-600 dark:text-green-400 font-medium">Active</span>
+        {/* Current Status Info */}
+        <div className={`p-4 rounded-lg border-2 ${
+          gateway.isBypassed
+            ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800'
+            : 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+        }`}>
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <div className="text-base font-semibold">
+                Current Mode: {gateway.isBypassed ? 'Direct RPC' : 'Gateway Active'}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {gateway.isBypassed
+                  ? 'All transactions are using direct RPC connection (Gateway bypassed)'
+                  : `Transactions are optimized through Sanctum Gateway${gateway.isSupported ? '' : ` (not available on ${cluster.name})`}`
+                }
+              </p>
+            </div>
+            <div className="text-sm font-medium">
+              {gateway.isBypassed ? (
+                <span className="text-orange-600 dark:text-orange-400">⚡ Direct</span>
               ) : (
-                <span className="text-gray-500">Inactive</span>
+                <span className="text-green-600 dark:text-green-400">✓ Optimized</span>
               )}
-            </span>
+            </div>
+          </div>
+          <div className="mt-3 pt-3 border-t border-current/10">
+            <p className="text-xs text-muted-foreground">
+              💡 Use the toggle in the header to switch between Gateway and Direct RPC mode
+            </p>
           </div>
         </div>
 
@@ -91,7 +91,7 @@ export function GatewayConfigPanel() {
             onChange={(e) =>
               gateway.updateConfig({ deliveryMethodType: e.target.value as DeliveryMethodType })
             }
-            disabled={!gateway.isEnabled}
+            disabled={!gateway.isEnabled || gateway.isBypassed}
             className="w-full px-3 py-2 bg-background border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
           >
             <option value="sanctum-sender">Sanctum Sender (Dual-path: RPC + Jito)</option>
@@ -120,7 +120,7 @@ export function GatewayConfigPanel() {
             id="cu-price-range"
             value={gateway.config.cuPriceRange}
             onChange={(e) => gateway.updateConfig({ cuPriceRange: e.target.value as FeeRange })}
-            disabled={!gateway.isEnabled || gateway.config.skipPriorityFee}
+            disabled={!gateway.isEnabled || gateway.config.skipPriorityFee || gateway.isBypassed}
             className="w-full px-3 py-2 bg-background border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
           >
             <option value="low">Low (25th percentile)</option>
@@ -142,7 +142,7 @@ export function GatewayConfigPanel() {
               id="jito-tip-range"
               value={gateway.config.jitoTipRange}
               onChange={(e) => gateway.updateConfig({ jitoTipRange: e.target.value as JitoTipRange })}
-              disabled={!gateway.isEnabled}
+              disabled={!gateway.isEnabled || gateway.isBypassed}
               className="w-full px-3 py-2 bg-background border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
             >
               <option value="low">Low (25th percentile)</option>
@@ -167,7 +167,7 @@ export function GatewayConfigPanel() {
                 type="checkbox"
                 checked={gateway.config.skipSimulation}
                 onChange={(e) => gateway.updateConfig({ skipSimulation: e.target.checked })}
-                disabled={!gateway.isEnabled}
+                disabled={!gateway.isEnabled || gateway.isBypassed}
                 className="w-4 h-4 text-primary bg-background border-gray-300 rounded focus:ring-primary disabled:opacity-50"
               />
               <Label htmlFor="skip-simulation" className="text-sm font-normal">
@@ -181,7 +181,7 @@ export function GatewayConfigPanel() {
                 type="checkbox"
                 checked={gateway.config.skipPriorityFee}
                 onChange={(e) => gateway.updateConfig({ skipPriorityFee: e.target.checked })}
-                disabled={!gateway.isEnabled}
+                disabled={!gateway.isEnabled || gateway.isBypassed}
                 className="w-4 h-4 text-primary bg-background border-gray-300 rounded focus:ring-primary disabled:opacity-50"
               />
               <Label htmlFor="skip-priority-fee" className="text-sm font-normal">
@@ -202,7 +202,7 @@ export function GatewayConfigPanel() {
                     expireInSlots: e.target.value ? parseInt(e.target.value) : undefined,
                   })
                 }
-                disabled={!gateway.isEnabled}
+                disabled={!gateway.isEnabled || gateway.isBypassed}
                 placeholder="Default: 150 blocks"
                 className="w-full px-3 py-2 bg-background border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
               />
@@ -258,8 +258,46 @@ export function GatewayConfigPanel() {
   )
 }
 
+export function GatewayBypassToggle() {
+  const gateway = useGateway()
+
+  return (
+    <button
+      onClick={() => gateway.toggleBypass()}
+      className={`
+        flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors
+        ${
+          gateway.isBypassed
+            ? 'bg-orange-500 hover:bg-orange-600 text-white'
+            : 'bg-green-500 hover:bg-green-600 text-white'
+        }
+      `}
+      title={gateway.isBypassed ? 'Using Direct RPC - Click to enable Gateway' : 'Using Gateway - Click to bypass'}
+    >
+      <span className="relative flex h-2 w-2">
+        <span className={`relative inline-flex rounded-full h-2 w-2 ${gateway.isBypassed ? 'bg-white' : 'bg-white animate-pulse'}`}></span>
+      </span>
+      <span className="hidden sm:inline">
+        {gateway.isBypassed ? 'Direct RPC' : 'Gateway'}
+      </span>
+    </button>
+  )
+}
+
 export function GatewayStatusBadge() {
   const gateway = useGateway()
+
+  // Show bypass status prominently
+  if (gateway.isBypassed) {
+    return (
+      <div className="inline-flex items-center gap-2 px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-200 rounded-full text-xs font-medium">
+        <span className="relative flex h-2 w-2">
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
+        </span>
+        Direct RPC (Gateway Bypassed)
+      </div>
+    )
+  }
 
   if (!gateway.isEnabled) {
     return null

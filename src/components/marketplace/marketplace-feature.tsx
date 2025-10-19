@@ -121,7 +121,7 @@ export default function MarketplaceFeature() {
               <h2 className="text-2xl font-bold">Your Coupons</h2>
               {marketplace.userCoupons.data && (
                 <p className="text-muted-foreground">
-                  {marketplace.userCoupons.data.length} coupons
+                  {marketplace.userCoupons.data.filter(c => c.couponPublicKey).length} coupons
                 </p>
               )}
             </div>

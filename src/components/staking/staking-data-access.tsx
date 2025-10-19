@@ -1,13 +1,15 @@
 'use client'
 
 import { getBasicProgram, getBasicProgramId } from '@project/anchor'
-import { useWallet } from '@solana/wallet-adapter-react'
-import { Cluster, PublicKey, SystemProgram } from '@solana/web3.js'
+import { useConnection, useWallet } from '@solana/wallet-adapter-react'
+import { Cluster, PublicKey, SystemProgram, Transaction } from '@solana/web3.js'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { useCluster } from '../cluster/cluster-data-access'
 import { useAnchorProvider } from '../solana/solana-provider'
 import { useTransactionToast } from '../use-transaction-toast'
+import { useGateway } from '../gateway/gateway-data-access'
+import { buildGatewayTransaction, sendGatewayTransaction, gatewayTransactionTracker } from '@/lib/gateway'
 import { toast } from 'sonner'
 import { BN } from '@coral-xyz/anchor'
 
@@ -38,10 +40,12 @@ export interface CouponWithStaking {
 }
 
 export function useStakingProgram() {
-  const { publicKey } = useWallet()
+  const { connection } = useConnection()
+  const { publicKey, signTransaction } = useWallet()
   const { cluster } = useCluster()
   const transactionToast = useTransactionToast()
   const provider = useAnchorProvider()
+  const gateway = useGateway()
   const programId = useMemo(() => getBasicProgramId(cluster.network as Cluster), [cluster])
   const program = useMemo(() => getBasicProgram(provider, programId), [provider, programId])
 
@@ -142,16 +146,90 @@ export function useStakingProgram() {
         program.programId
       )
 
-      const signature = await program.methods
-        .stakeCoupon()
-        .accounts({
-          coupon: couponPubkey,
-          stakedCoupon: stakedCouponPda,
-          rewardsPool: poolPda,
-          staker: publicKey,
-          systemProgram: SystemProgram.programId,
-        } as any)
-        .rpc()
+      let signature: string
+
+      // Check if Gateway is enabled and configured
+      if (gateway.isEnabled && gateway.apiKey) {
+        const txId = `stake-coupon-${Date.now()}`
+
+        try {
+          gatewayTransactionTracker.start(txId, {
+            deliveryMethod: gateway.config.deliveryMethodType,
+            cuPriceRange: gateway.config.cuPriceRange,
+            jitoTipRange: gateway.config.jitoTipRange,
+          })
+
+          toast.info('Building transaction with Gateway...')
+
+          const tx = await program.methods
+            .stakeCoupon()
+            .accounts({
+              coupon: couponPubkey,
+              stakedCoupon: stakedCouponPda,
+              rewardsPool: poolPda,
+              staker: publicKey,
+              systemProgram: SystemProgram.programId,
+            } as any)
+            .transaction()
+
+          const { blockhash } = await connection.getLatestBlockhash()
+          tx.recentBlockhash = blockhash
+          tx.feePayer = publicKey
+
+          gatewayTransactionTracker.update(txId, { status: 'building' })
+
+          const cluster = gateway.getCluster()
+          if (!cluster) {
+            throw new Error('Gateway is not supported on this cluster. Please switch to devnet or mainnet.')
+          }
+
+          const buildResponse = await buildGatewayTransaction(cluster, tx, gateway.getBuildOptions())
+
+          toast.info('Signing optimized transaction...')
+          gatewayTransactionTracker.update(txId, { status: 'signing' })
+
+          const optimizedTxBuffer = Buffer.from(buildResponse.result.transaction, 'base64')
+          const optimizedTx = Transaction.from(optimizedTxBuffer)
+
+          if (!signTransaction) {
+            throw new Error('Wallet does not support transaction signing')
+          }
+
+          const signedTx = await signTransaction(optimizedTx)
+          const signedTxBase64 = Buffer.from(signedTx.serialize()).toString('base64')
+
+          toast.info('Sending transaction via Gateway...')
+          gatewayTransactionTracker.update(txId, { status: 'sending' })
+
+          const sendResponse = await sendGatewayTransaction(cluster, signedTxBase64, { encoding: 'base64' })
+
+          if (!sendResponse.result) {
+            throw new Error('No signature returned from Gateway')
+          }
+
+          signature = sendResponse.result
+
+          gatewayTransactionTracker.update(txId, { status: 'success', signature })
+          toast.success('Transaction sent via Gateway!')
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+          gatewayTransactionTracker.update(txId, { status: 'failed', error: errorMessage })
+          throw error
+        }
+      } else {
+        // Fallback to standard RPC
+        toast.info('Sending transaction via standard RPC...')
+        signature = await program.methods
+          .stakeCoupon()
+          .accounts({
+            coupon: couponPubkey,
+            stakedCoupon: stakedCouponPda,
+            rewardsPool: poolPda,
+            staker: publicKey,
+            systemProgram: SystemProgram.programId,
+          } as any)
+          .rpc()
+      }
 
       return signature
     },
@@ -182,16 +260,90 @@ export function useStakingProgram() {
         program.programId
       )
 
-      const signature = await program.methods
-        .unstakeCoupon()
-        .accounts({
-          stakedCoupon: stakedCouponPubkey,
-          coupon: couponPubkey,
-          rewardsPool: poolPda,
-          staker: publicKey,
-          systemProgram: SystemProgram.programId,
-        } as any)
-        .rpc()
+      let signature: string
+
+      // Check if Gateway is enabled and configured
+      if (gateway.isEnabled && gateway.apiKey) {
+        const txId = `unstake-coupon-${Date.now()}`
+
+        try {
+          gatewayTransactionTracker.start(txId, {
+            deliveryMethod: gateway.config.deliveryMethodType,
+            cuPriceRange: gateway.config.cuPriceRange,
+            jitoTipRange: gateway.config.jitoTipRange,
+          })
+
+          toast.info('Building transaction with Gateway...')
+
+          const tx = await program.methods
+            .unstakeCoupon()
+            .accounts({
+              stakedCoupon: stakedCouponPubkey,
+              coupon: couponPubkey,
+              rewardsPool: poolPda,
+              staker: publicKey,
+              systemProgram: SystemProgram.programId,
+            } as any)
+            .transaction()
+
+          const { blockhash } = await connection.getLatestBlockhash()
+          tx.recentBlockhash = blockhash
+          tx.feePayer = publicKey
+
+          gatewayTransactionTracker.update(txId, { status: 'building' })
+
+          const cluster = gateway.getCluster()
+          if (!cluster) {
+            throw new Error('Gateway is not supported on this cluster. Please switch to devnet or mainnet.')
+          }
+
+          const buildResponse = await buildGatewayTransaction(cluster, tx, gateway.getBuildOptions())
+
+          toast.info('Signing optimized transaction...')
+          gatewayTransactionTracker.update(txId, { status: 'signing' })
+
+          const optimizedTxBuffer = Buffer.from(buildResponse.result.transaction, 'base64')
+          const optimizedTx = Transaction.from(optimizedTxBuffer)
+
+          if (!signTransaction) {
+            throw new Error('Wallet does not support transaction signing')
+          }
+
+          const signedTx = await signTransaction(optimizedTx)
+          const signedTxBase64 = Buffer.from(signedTx.serialize()).toString('base64')
+
+          toast.info('Sending transaction via Gateway...')
+          gatewayTransactionTracker.update(txId, { status: 'sending' })
+
+          const sendResponse = await sendGatewayTransaction(cluster, signedTxBase64, { encoding: 'base64' })
+
+          if (!sendResponse.result) {
+            throw new Error('No signature returned from Gateway')
+          }
+
+          signature = sendResponse.result
+
+          gatewayTransactionTracker.update(txId, { status: 'success', signature })
+          toast.success('Transaction sent via Gateway!')
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+          gatewayTransactionTracker.update(txId, { status: 'failed', error: errorMessage })
+          throw error
+        }
+      } else {
+        // Fallback to standard RPC
+        toast.info('Sending transaction via standard RPC...')
+        signature = await program.methods
+          .unstakeCoupon()
+          .accounts({
+            stakedCoupon: stakedCouponPubkey,
+            coupon: couponPubkey,
+            rewardsPool: poolPda,
+            staker: publicKey,
+            systemProgram: SystemProgram.programId,
+          } as any)
+          .rpc()
+      }
 
       return signature
     },
@@ -216,15 +368,88 @@ export function useStakingProgram() {
         program.programId
       )
 
-      const signature = await program.methods
-        .claimRewards()
-        .accounts({
-          stakedCoupon: stakedCouponPubkey,
-          rewardsPool: poolPda,
-          staker: publicKey,
-          systemProgram: SystemProgram.programId,
-        } as any)
-        .rpc()
+      let signature: string
+
+      // Check if Gateway is enabled and configured
+      if (gateway.isEnabled && gateway.apiKey) {
+        const txId = `claim-rewards-${Date.now()}`
+
+        try {
+          gatewayTransactionTracker.start(txId, {
+            deliveryMethod: gateway.config.deliveryMethodType,
+            cuPriceRange: gateway.config.cuPriceRange,
+            jitoTipRange: gateway.config.jitoTipRange,
+          })
+
+          toast.info('Building transaction with Gateway...')
+
+          const tx = await program.methods
+            .claimRewards()
+            .accounts({
+              stakedCoupon: stakedCouponPubkey,
+              rewardsPool: poolPda,
+              staker: publicKey,
+              systemProgram: SystemProgram.programId,
+            } as any)
+            .transaction()
+
+          const { blockhash } = await connection.getLatestBlockhash()
+          tx.recentBlockhash = blockhash
+          tx.feePayer = publicKey
+
+          gatewayTransactionTracker.update(txId, { status: 'building' })
+
+          const cluster = gateway.getCluster()
+          if (!cluster) {
+            throw new Error('Gateway is not supported on this cluster. Please switch to devnet or mainnet.')
+          }
+
+          const buildResponse = await buildGatewayTransaction(cluster, tx, gateway.getBuildOptions())
+
+          toast.info('Signing optimized transaction...')
+          gatewayTransactionTracker.update(txId, { status: 'signing' })
+
+          const optimizedTxBuffer = Buffer.from(buildResponse.result.transaction, 'base64')
+          const optimizedTx = Transaction.from(optimizedTxBuffer)
+
+          if (!signTransaction) {
+            throw new Error('Wallet does not support transaction signing')
+          }
+
+          const signedTx = await signTransaction(optimizedTx)
+          const signedTxBase64 = Buffer.from(signedTx.serialize()).toString('base64')
+
+          toast.info('Sending transaction via Gateway...')
+          gatewayTransactionTracker.update(txId, { status: 'sending' })
+
+          const sendResponse = await sendGatewayTransaction(cluster, signedTxBase64, { encoding: 'base64' })
+
+          if (!sendResponse.result) {
+            throw new Error('No signature returned from Gateway')
+          }
+
+          signature = sendResponse.result
+
+          gatewayTransactionTracker.update(txId, { status: 'success', signature })
+          toast.success('Transaction sent via Gateway!')
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+          gatewayTransactionTracker.update(txId, { status: 'failed', error: errorMessage })
+          throw error
+        }
+      } else {
+        // Fallback to standard RPC
+        toast.info('Sending transaction via standard RPC...')
+        signature = await program.methods
+          .claimRewards()
+          .accounts({
+            stakedCoupon: stakedCouponPubkey,
+            rewardsPool: poolPda,
+            staker: publicKey,
+            systemProgram: SystemProgram.programId,
+          } as any)
+          .rpc()
+      }
 
       return signature
     },

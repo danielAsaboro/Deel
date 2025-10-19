@@ -3,7 +3,7 @@
 import { getBasicProgram, getBasicProgramId } from '@project/anchor'
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
 import { Cluster, Keypair, PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY, Transaction } from '@solana/web3.js'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { useCluster } from '../cluster/cluster-data-access'
 import { useAnchorProvider } from '../solana/solana-provider'
@@ -158,6 +158,7 @@ export function useDealsProgram() {
   const transactionToast = useTransactionToast()
   const provider = useAnchorProvider()
   const gateway = useGateway()
+  const queryClient = useQueryClient()
   const programId = useMemo(() => getBasicProgramId(cluster.network as Cluster), [cluster])
   const program = useMemo(() => getBasicProgram(provider, programId), [provider, programId])
 
@@ -165,13 +166,28 @@ export function useDealsProgram() {
   const deals = useQuery({
     queryKey: ['deals', 'all', { cluster }],
     queryFn: async () => {
-      const deals = await program.account.deal.all()
-      return deals.map((deal) => ({
-        publicKey: deal.publicKey,
-        ...deal.account,
-      })) as Deal[]
+      try {
+        console.log('Fetching deals from program:', program.programId.toString())
+        const deals = await program.account.deal.all()
+        console.log(`Found ${deals.length} deals`)
+        if (deals.length > 0) {
+          console.log('All deals and their merchants:')
+          deals.forEach((d, i) => {
+            console.log(`  ${i + 1}. ${d.account.title} - Merchant: ${d.account.merchant.toString()}`)
+          })
+        }
+        return deals.map((deal) => ({
+          publicKey: deal.publicKey,
+          ...deal.account,
+        })) as Deal[]
+      } catch (error) {
+        console.error('Error fetching deals:', error)
+        throw error
+      }
     },
     enabled: !!program,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
   })
 
   // Fetch deals by merchant
@@ -179,20 +195,37 @@ export function useDealsProgram() {
     return useQuery({
       queryKey: ['deals', 'merchant', merchant.toString(), { cluster }],
       queryFn: async () => {
-        const deals = await program.account.deal.all([
-          {
-            memcmp: {
-              offset: 8,
-              bytes: merchant.toBase58(),
+        try {
+          console.log('Fetching deals for merchant:', merchant.toString())
+          console.log('Using memcmp filter at offset 8')
+          const deals = await program.account.deal.all([
+            {
+              memcmp: {
+                offset: 8,
+                bytes: merchant.toBase58(),
+              },
             },
-          },
-        ])
-        return deals.map((deal) => ({
-          publicKey: deal.publicKey,
-          ...deal.account,
-        })) as Deal[]
+          ])
+          console.log(`Found ${deals.length} deals for merchant ${merchant.toString()}`)
+          if (deals.length > 0) {
+            console.log('Merchant deals:', deals.map(d => ({
+              pubkey: d.publicKey.toString(),
+              merchant: d.account.merchant.toString(),
+              title: d.account.title
+            })))
+          }
+          return deals.map((deal) => ({
+            publicKey: deal.publicKey,
+            ...deal.account,
+          })) as Deal[]
+        } catch (error) {
+          console.error('Error fetching merchant deals:', error)
+          throw error
+        }
       },
       enabled: !!program && !!merchant,
+      refetchOnMount: true,
+      refetchOnWindowFocus: true,
     })
   }
 
@@ -218,9 +251,19 @@ export function useDealsProgram() {
     }) => {
       if (!publicKey) throw new Error('Wallet not connected')
 
+      // Derive the deal PDA (must match the seeds in the program)
+      const [dealPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from('deal'), publicKey.toBuffer(), Buffer.from(title)],
+        program.programId
+      )
+
+      console.log('Creating deal with PDA:', dealPda.toString())
+      console.log('Merchant:', publicKey.toString())
+      console.log('Title:', title)
+
       let signature: string
 
-      // Check if Gateway is enabled and configured
+      // Check if Gateway is enabled and configured (bypass flag is checked in gateway.isEnabled)
       if (gateway.isEnabled && gateway.apiKey) {
         const txId = `create-deal-${Date.now()}`
 
@@ -246,8 +289,10 @@ export function useDealsProgram() {
               new BN(priceLamports)
             )
             .accounts({
+              deal: dealPda,
               merchant: publicKey,
-            })
+              systemProgram: SystemProgram.programId,
+            } as any)
             .transaction()
 
           // Get recent blockhash (Gateway will replace this)
@@ -263,11 +308,22 @@ export function useDealsProgram() {
             throw new Error('Gateway is not supported on this cluster. Please switch to devnet or mainnet.')
           }
 
-          const buildResponse = await buildGatewayTransaction(
-            cluster,
-            tx,
-            gateway.getBuildOptions()
-          )
+          let buildResponse
+          try {
+            buildResponse = await buildGatewayTransaction(
+              cluster,
+              tx,
+              gateway.getBuildOptions()
+            )
+          } catch (buildError) {
+            console.error('Gateway build error:', buildError)
+            console.error('Transaction being built:', {
+              dealPda: dealPda.toString(),
+              merchant: publicKey.toString(),
+              title,
+            })
+            throw new Error(`Gateway failed to build transaction: ${buildError instanceof Error ? buildError.message : 'Unknown error'}`)
+          }
 
           toast.info('Signing optimized transaction...')
           gatewayTransactionTracker.update(txId, { status: 'signing' })
@@ -315,6 +371,7 @@ export function useDealsProgram() {
         }
       } else {
         // Fallback to standard RPC if Gateway is not enabled
+        console.log('Using direct RPC (Gateway disabled)')
         toast.info('Sending transaction via standard RPC...')
         signature = await program.methods
           .createDeal(
@@ -327,21 +384,20 @@ export function useDealsProgram() {
             new BN(priceLamports)
           )
           .accounts({
+            deal: dealPda,
             merchant: publicKey,
-          })
+            systemProgram: SystemProgram.programId,
+          } as any)
           .rpc()
       }
-
-      const [dealPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from('deal'), publicKey.toBuffer(), Buffer.from(title)],
-        program.programId
-      )
 
       return { signature, dealPda }
     },
     onSuccess: ({ signature }) => {
       transactionToast(signature)
-      deals.refetch()
+      // Invalidate all deal queries to refetch both main and merchant-specific queries
+      queryClient.invalidateQueries({ queryKey: ['deals'] })
+      console.log('Deal created successfully, invalidating all deal queries')
     },
     onError: (error) => {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
@@ -405,7 +461,7 @@ export function useDealsProgram() {
     },
     onSuccess: (signature) => {
       transactionToast(signature)
-      deals.refetch()
+      queryClient.invalidateQueries({ queryKey: ['deals'] })
     },
     onError: (error) => {
       toast.error(`Failed to update deal: ${error}`)
@@ -528,7 +584,7 @@ export function useDealsProgram() {
     },
     onSuccess: (signature) => {
       transactionToast(signature)
-      deals.refetch()
+      queryClient.invalidateQueries({ queryKey: ['deals'] })
     },
     onError: (error) => {
       toast.error(`Failed to mint coupon: ${error}`)
@@ -587,7 +643,7 @@ export function useDealsProgram() {
     },
     onSuccess: (signature) => {
       transactionToast(signature)
-      deals.refetch()
+      queryClient.invalidateQueries({ queryKey: ['deals'] })
     },
     onError: (error) => {
       toast.error(`Failed to rate deal: ${error}`)
