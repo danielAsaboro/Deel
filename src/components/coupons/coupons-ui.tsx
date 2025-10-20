@@ -5,24 +5,43 @@ import { useWallet } from '@solana/wallet-adapter-react'
 import { PublicKey } from '@solana/web3.js'
 import { useCouponsProgram, Coupon } from './coupons-data-access'
 import { useDealsProgram, Deal } from '../deals/deals-data-access'
+import { useSaleHistory } from '../marketplace/sale-history-data-access'
+import { useMarketplaceProgram } from '../marketplace/marketplace-data-access'
+import { CouponSaleHistory } from '../marketplace/sale-history-ui'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../ui/card'
 import { Button } from '../ui/button'
 import { Badge } from '../ui/badge'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import QRCode from 'qrcode'
-import { Gift, QrCode, Ticket } from 'lucide-react'
+import { Gift, QrCode, Ticket, History, DollarSign } from 'lucide-react'
+import { useUsdcPrice } from '@/hooks/use-usdc-price'
 
 export function CouponCard({ coupon, deal }: { coupon: Coupon; deal?: Deal }) {
   const { transferCoupon, generateRedemptionQR } = useCouponsProgram()
+  const { useCouponSales } = useSaleHistory()
+  const { listCoupon, userCoupons: marketplaceCoupons } = useMarketplaceProgram()
+  const { usdcToLamports, lamportsToUsdc } = useUsdcPrice()
+  const couponSales = useCouponSales(coupon.publicKey)
+
   const [showQR, setShowQR] = useState(false)
   const [showTransfer, setShowTransfer] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
+  const [showListDialog, setShowListDialog] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [transferAddress, setTransferAddress] = useState('')
+  const [listingPrice, setListingPrice] = useState('')
 
   const mintedDate = new Date(coupon.mintedAt.toNumber() * 1000)
   const redeemedDate = coupon.redeemedAt ? new Date(coupon.redeemedAt.toNumber() * 1000) : null
+  const hasSaleHistory = couponSales.data && couponSales.data.length > 0
+
+  // Check if this coupon is currently listed
+  const couponWithListing = marketplaceCoupons.data?.find(
+    (c) => c.couponPublicKey.toString() === coupon.publicKey.toString()
+  )
+  const isListed = couponWithListing?.listing !== null && couponWithListing?.listing !== undefined
 
   useEffect(() => {
     if (showQR) {
@@ -45,6 +64,18 @@ export function CouponCard({ coupon, deal }: { coupon: Coupon; deal?: Deal }) {
     }
   }
 
+  const handleListOnMarketplace = async () => {
+    if (!listingPrice || parseFloat(listingPrice) <= 0) return
+
+    const priceLamports = usdcToLamports(parseFloat(listingPrice))
+    await listCoupon.mutateAsync({
+      couponPubkey: coupon.publicKey,
+      priceLamports,
+    })
+    setShowListDialog(false)
+    setListingPrice('')
+  }
+
   return (
     <>
       <Card>
@@ -61,9 +92,21 @@ export function CouponCard({ coupon, deal }: { coupon: Coupon; deal?: Deal }) {
                 Minted {mintedDate.toLocaleDateString()}
               </CardDescription>
             </div>
-            <Badge variant={coupon.isRedeemed ? 'secondary' : 'default'}>
-              {coupon.isRedeemed ? 'Redeemed' : 'Active'}
-            </Badge>
+            <div className="flex gap-1">
+              {coupon.staked && (
+                <Badge variant="outline" className="bg-primary/10">
+                  Staked
+                </Badge>
+              )}
+              {isListed && !coupon.isRedeemed && (
+                <Badge variant="outline" className="bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                  Listed for Sale
+                </Badge>
+              )}
+              <Badge variant={coupon.isRedeemed ? 'secondary' : 'default'}>
+                {coupon.isRedeemed ? 'Redeemed' : 'Active'}
+              </Badge>
+            </div>
           </div>
         </CardHeader>
 
@@ -83,18 +126,77 @@ export function CouponCard({ coupon, deal }: { coupon: Coupon; deal?: Deal }) {
           </CardContent>
         )}
 
-        <CardFooter className="gap-2">
+        <CardFooter className="gap-2 flex-col items-start">
           {!coupon.isRedeemed && (
             <>
-              <Button size="sm" variant="outline" onClick={() => setShowQR(true)}>
-                <QrCode className="h-4 w-4 mr-1" />
-                Show QR
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setShowTransfer(true)}>
-                <Gift className="h-4 w-4 mr-1" />
-                Transfer
-              </Button>
+              <div className="flex gap-2 w-full">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowQR(true)}
+                  disabled={!!coupon.staked || isListed}
+                  className="flex-1"
+                >
+                  <QrCode className="h-4 w-4 mr-1" />
+                  Show QR
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowTransfer(true)}
+                  disabled={!!coupon.staked || isListed}
+                  className="flex-1"
+                >
+                  <Gift className="h-4 w-4 mr-1" />
+                  Transfer
+                </Button>
+              </div>
+              <div className="flex gap-2 w-full">
+                {!isListed ? (
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={() => setShowListDialog(true)}
+                    disabled={!!coupon.staked}
+                    className="flex-1"
+                  >
+                    <DollarSign className="h-4 w-4 mr-1" />
+                    List on Marketplace
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => window.location.href = '/marketplace'}
+                    className="flex-1"
+                  >
+                    <DollarSign className="h-4 w-4 mr-1" />
+                    View Listing
+                  </Button>
+                )}
+              </div>
+              {coupon.staked && (
+                <p className="text-xs text-muted-foreground">
+                  Unstake this coupon from the Staking page to transfer, list, or redeem it
+                </p>
+              )}
+              {isListed && (
+                <p className="text-xs text-muted-foreground">
+                  This coupon is listed for sale. Delist it from the Marketplace to transfer or redeem it
+                </p>
+              )}
             </>
+          )}
+          {hasSaleHistory && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowHistory(true)}
+              className="w-full"
+            >
+              <History className="h-4 w-4 mr-1" />
+              View Sale History ({couponSales.data.length})
+            </Button>
           )}
         </CardFooter>
       </Card>
@@ -142,6 +244,76 @@ export function CouponCard({ coupon, deal }: { coupon: Coupon; deal?: Deal }) {
               className="w-full"
             >
               {transferCoupon.isPending ? 'Transferring...' : 'Transfer Coupon'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showHistory} onOpenChange={setShowHistory}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Sale History</DialogTitle>
+          </DialogHeader>
+          {couponSales.isLoading && (
+            <div className="py-8 text-center text-muted-foreground">Loading sale history...</div>
+          )}
+          {couponSales.isError && (
+            <div className="py-8 text-center text-destructive">
+              Failed to load sale history: {couponSales.error?.message}
+            </div>
+          )}
+          {couponSales.data && <CouponSaleHistory sales={couponSales.data} />}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showListDialog} onOpenChange={setShowListDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>List Coupon for Sale</DialogTitle>
+            <DialogDescription>
+              Set a price for your coupon on the secondary marketplace. Buyers will pay 2.5% platform fee.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="listing-price">Price (USDC)</Label>
+              <Input
+                id="listing-price"
+                type="number"
+                step="0.01"
+                min="0.01"
+                placeholder="10.00"
+                value={listingPrice}
+                onChange={(e) => setListingPrice(e.target.value)}
+              />
+            </div>
+            <div className="bg-muted p-3 rounded-md text-sm">
+              <p className="font-medium mb-1">Breakdown:</p>
+              <div className="space-y-1 text-muted-foreground">
+                <div className="flex justify-between">
+                  <span>List price:</span>
+                  <span>${listingPrice || '0'} USDC</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>You receive (97.5%):</span>
+                  <span>
+                    ${(parseFloat(listingPrice || '0') * 0.975).toFixed(2)} USDC
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Platform fee (2.5%):</span>
+                  <span>
+                    ${(parseFloat(listingPrice || '0') * 0.025).toFixed(2)} USDC
+                  </span>
+                </div>
+              </div>
+            </div>
+            <Button
+              onClick={handleListOnMarketplace}
+              disabled={listCoupon.isPending || !listingPrice || parseFloat(listingPrice) <= 0}
+              className="w-full"
+            >
+              {listCoupon.isPending ? 'Listing...' : 'List Coupon'}
             </Button>
           </div>
         </DialogContent>

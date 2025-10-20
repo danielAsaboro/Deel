@@ -6,10 +6,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Listing, CouponWithListing } from './marketplace-data-access'
+import { Listing, CouponWithListing, ListingWithDeal } from './marketplace-data-access'
 import { LAMPORTS_PER_SOL, PublicKey, Keypair } from '@solana/web3.js'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { useUsdcPrice } from '@/hooks/use-usdc-price'
+import { Calendar, TrendingDown, Tag, User } from 'lucide-react'
 
 // Platform wallet for receiving fees - replace with real wallet for production
 const PLATFORM_WALLET = Keypair.generate().publicKey
@@ -19,7 +20,7 @@ export function MarketplaceListings({
   onBuy,
   isLoading,
 }: {
-  listings: Listing[]
+  listings: ListingWithDeal[]
   onBuy: (listing: Listing) => void
   isLoading: boolean
 }) {
@@ -41,31 +42,81 @@ export function MarketplaceListings({
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {listings.map((listing) => (
-        <Card key={listing.publicKey.toString()}>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium">Coupon NFT</CardTitle>
-            <CardDescription className="text-xs truncate">
-              {listing.coupon.toString().slice(0, 20)}...
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <p className="text-2xl font-bold">${formatUSDC(listing.priceLamports.toNumber())} USDC</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Seller: {listing.seller.toString().slice(0, 8)}...
-              </p>
-            </div>
-            <Button
-              onClick={() => onBuy(listing)}
-              disabled={isLoading}
-              className="w-full"
-            >
-              Buy Coupon
-            </Button>
-          </CardContent>
-        </Card>
-      ))}
+      {listings.map((listing) => {
+        const isExpired = listing.expiryTimestamp
+          ? new Date(listing.expiryTimestamp.toNumber() * 1000) < new Date()
+          : false
+
+        return (
+          <Card key={listing.publicKey.toString()} className="overflow-hidden">
+            <CardHeader className="pb-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <CardTitle className="text-lg line-clamp-1">
+                    {listing.dealTitle || 'Unknown Deal'}
+                  </CardTitle>
+                  <CardDescription className="text-xs line-clamp-2 mt-1">
+                    {listing.dealDescription || `Coupon ${listing.coupon.toString().slice(0, 8)}...`}
+                  </CardDescription>
+                </div>
+                {listing.discountPercent && (
+                  <Badge variant="default" className="shrink-0">
+                    {listing.discountPercent}% OFF
+                  </Badge>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
+                {listing.discountPercent && (
+                  <div className="flex items-center gap-1">
+                    <TrendingDown className="h-3 w-3 text-green-500" />
+                    <span className="font-semibold text-green-500">{listing.discountPercent}% OFF</span>
+                  </div>
+                )}
+                {listing.dealCategory && (
+                  <div className="flex items-center gap-1">
+                    <Tag className="h-3 w-3" />
+                    <span>{listing.dealCategory}</span>
+                  </div>
+                )}
+                {listing.expiryTimestamp && (
+                  <div className="flex items-center gap-1">
+                    <Calendar className="h-3 w-3" />
+                    <span className={isExpired ? 'text-red-500' : ''}>
+                      {isExpired
+                        ? 'Expired'
+                        : `Exp ${new Date(listing.expiryTimestamp.toNumber() * 1000).toLocaleDateString()}`
+                      }
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t pt-3">
+                <p className="text-2xl font-bold">${formatUSDC(listing.priceLamports.toNumber())} USDC</p>
+                <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                  <User className="h-3 w-3" />
+                  <span>Seller: {listing.seller.toString().slice(0, 8)}...</span>
+                </div>
+                {listing.merchant && (
+                  <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                    <span>Merchant: {listing.merchant.toString().slice(0, 8)}...</span>
+                  </div>
+                )}
+              </div>
+
+              <Button
+                onClick={() => onBuy(listing)}
+                disabled={isLoading || isExpired}
+                className="w-full"
+              >
+                {isExpired ? 'Expired' : 'Buy Coupon'}
+              </Button>
+            </CardContent>
+          </Card>
+        )
+      })}
     </div>
   )
 }

@@ -98,6 +98,32 @@
           "writable": true
         },
         {
+          "name": "sale",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  97,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "coupon"
+              },
+              {
+                "kind": "account",
+                "path": "coupon.sale_count",
+                "account": "Coupon"
+              }
+            ]
+          }
+        },
+        {
           "name": "seller",
           "writable": true
         },
@@ -251,6 +277,7 @@
         },
         {
           "name": "seller",
+          "writable": true,
           "signer": true
         }
       ],
@@ -348,6 +375,11 @@
               {
                 "kind": "account",
                 "path": "coupon"
+              },
+              {
+                "kind": "account",
+                "path": "coupon.listing_count",
+                "account": "Coupon"
               }
             ]
           }
@@ -360,6 +392,35 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "staked_coupon",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  100,
+                  95,
+                  99,
+                  111,
+                  117,
+                  112,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "coupon"
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -638,6 +699,35 @@
         {
           "name": "merchant",
           "signer": true
+        },
+        {
+          "name": "staked_coupon",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  100,
+                  95,
+                  99,
+                  111,
+                  117,
+                  112,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "coupon"
+              }
+            ]
+          }
         }
       ],
       "args": []
@@ -727,6 +817,35 @@
         },
         {
           "name": "new_owner"
+        },
+        {
+          "name": "staked_coupon",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  100,
+                  95,
+                  99,
+                  111,
+                  117,
+                  112,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "coupon"
+              }
+            ]
+          }
         }
       ],
       "args": []
@@ -888,6 +1007,19 @@
       ]
     },
     {
+      "name": "Sale",
+      "discriminator": [
+        202,
+        64,
+        232,
+        171,
+        178,
+        172,
+        34,
+        183
+      ]
+    },
+    {
       "name": "StakedCoupon",
       "discriminator": [
         181,
@@ -976,6 +1108,11 @@
       "code": 6014,
       "name": "NoRewardsToClaim",
       "msg": "No rewards to claim"
+    },
+    {
+      "code": 6015,
+      "name": "CouponStaked",
+      "msg": "Coupon is currently staked and cannot be redeemed, transferred, or listed"
     }
   ],
   "types": [
@@ -1037,6 +1174,14 @@
             "type": {
               "option": "i64"
             }
+          },
+          {
+            "name": "listing_count",
+            "type": "u32"
+          },
+          {
+            "name": "sale_count",
+            "type": "u32"
           },
           {
             "name": "bump",
@@ -1159,6 +1304,10 @@
             "type": "i64"
           },
           {
+            "name": "listing_number",
+            "type": "u32"
+          },
+          {
             "name": "bump",
             "type": "u8"
           }
@@ -1181,6 +1330,46 @@
           {
             "name": "admin",
             "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Sale",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "listing",
+            "type": "pubkey"
+          },
+          {
+            "name": "coupon",
+            "type": "pubkey"
+          },
+          {
+            "name": "seller",
+            "type": "pubkey"
+          },
+          {
+            "name": "buyer",
+            "type": "pubkey"
+          },
+          {
+            "name": "price_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "sold_at",
+            "type": "i64"
+          },
+          {
+            "name": "sale_number",
+            "type": "u32"
           },
           {
             "name": "bump",

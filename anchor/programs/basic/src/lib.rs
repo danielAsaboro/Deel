@@ -131,6 +131,8 @@ pub mod basic {
         coupon.mint = ctx.accounts.mint.key();
         coupon.is_redeemed = false;
         coupon.minted_at = Clock::get()?.unix_timestamp;
+        coupon.listing_count = 0;
+        coupon.sale_count = 0;
         coupon.bump = ctx.bumps.coupon;
 
         deal.current_supply += 1;
@@ -142,6 +144,9 @@ pub mod basic {
     pub fn redeem_coupon(ctx: Context<RedeemCoupon>) -> Result<()> {
         let coupon = &mut ctx.accounts.coupon;
         let deal = &ctx.accounts.deal;
+
+        // Check if coupon is staked
+        require!(ctx.accounts.staked_coupon.data_is_empty(), DealError::CouponStaked);
 
         require!(!coupon.is_redeemed, DealError::AlreadyRedeemed);
         require!(Clock::get()?.unix_timestamp < deal.expiry_timestamp, DealError::DealExpired);
@@ -156,6 +161,9 @@ pub mod basic {
 
     pub fn transfer_coupon(ctx: Context<TransferCoupon>) -> Result<()> {
         let coupon = &mut ctx.accounts.coupon;
+
+        // Check if coupon is staked
+        require!(ctx.accounts.staked_coupon.data_is_empty(), DealError::CouponStaked);
 
         require!(!coupon.is_redeemed, DealError::AlreadyRedeemed);
         require!(coupon.owner == ctx.accounts.current_owner.key(), DealError::NotOwner);
@@ -204,9 +212,17 @@ pub mod basic {
     pub fn list_coupon(ctx: Context<ListCoupon>, price_lamports: u64) -> Result<()> {
         require!(price_lamports > 0, DealError::InvalidPrice);
 
-        let coupon = &ctx.accounts.coupon;
+        let coupon = &mut ctx.accounts.coupon;
+
+        // Check if coupon is staked
+        require!(ctx.accounts.staked_coupon.data_is_empty(), DealError::CouponStaked);
+
         require!(!coupon.is_redeemed, DealError::AlreadyRedeemed);
         require!(coupon.owner == ctx.accounts.seller.key(), DealError::NotOwner);
+
+        // Store the current listing number and increment counter
+        let current_listing_number = coupon.listing_count;
+        coupon.listing_count += 1;
 
         let listing = &mut ctx.accounts.listing;
         listing.coupon = ctx.accounts.coupon.key();
@@ -214,9 +230,10 @@ pub mod basic {
         listing.price_lamports = price_lamports;
         listing.is_active = true;
         listing.created_at = Clock::get()?.unix_timestamp;
+        listing.listing_number = current_listing_number;
         listing.bump = ctx.bumps.listing;
 
-        msg!("Coupon listed for sale at {} lamports", price_lamports);
+        msg!("Coupon listed for sale at {} lamports (listing #{})", price_lamports, current_listing_number);
         Ok(())
     }
 
@@ -252,13 +269,28 @@ pub mod basic {
         );
         transfer(transfer_to_platform, platform_fee)?;
 
+        // Store the current sale number and increment counter
+        let current_sale_number = coupon.sale_count;
+        coupon.sale_count += 1;
+
+        // Create sale record
+        let sale = &mut ctx.accounts.sale;
+        sale.listing = listing.key();
+        sale.coupon = coupon.key();
+        sale.seller = listing.seller;
+        sale.buyer = ctx.accounts.buyer.key();
+        sale.price_lamports = listing.price_lamports;
+        sale.sold_at = Clock::get()?.unix_timestamp;
+        sale.sale_number = current_sale_number;
+        sale.bump = ctx.bumps.sale;
+
         // Transfer ownership
         coupon.owner = ctx.accounts.buyer.key();
 
-        // Deactivate listing
+        // Deactivate listing (account will be closed automatically via close constraint)
         listing.is_active = false;
 
-        msg!("Coupon purchased for {} lamports", listing.price_lamports);
+        msg!("Coupon purchased for {} lamports (sale #{})", listing.price_lamports, current_sale_number);
         Ok(())
     }
 
@@ -463,6 +495,13 @@ pub struct RedeemCoupon<'info> {
     pub deal: Account<'info, Deal>,
 
     pub merchant: Signer<'info>,
+
+    /// CHECK: Staked coupon PDA - checked manually to ensure coupon is not staked
+    #[account(
+        seeds = [b"staked_coupon", coupon.key().as_ref()],
+        bump,
+    )]
+    pub staked_coupon: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -474,6 +513,13 @@ pub struct TransferCoupon<'info> {
 
     /// CHECK: New owner pubkey
     pub new_owner: UncheckedAccount<'info>,
+
+    /// CHECK: Staked coupon PDA - checked manually to ensure coupon is not staked
+    #[account(
+        seeds = [b"staked_coupon", coupon.key().as_ref()],
+        bump,
+    )]
+    pub staked_coupon: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -525,7 +571,7 @@ pub struct ListCoupon<'info> {
         init,
         payer = seller,
         space = 8 + Listing::INIT_SPACE,
-        seeds = [b"listing", coupon.key().as_ref()],
+        seeds = [b"listing", coupon.key().as_ref(), coupon.listing_count.to_le_bytes().as_ref()],
         bump
     )]
     pub listing: Account<'info, Listing>,
@@ -534,15 +580,38 @@ pub struct ListCoupon<'info> {
     pub seller: Signer<'info>,
 
     pub system_program: Program<'info, System>,
+
+    /// CHECK: Staked coupon PDA - checked manually to ensure coupon is not staked
+    #[account(
+        seeds = [b"staked_coupon", coupon.key().as_ref()],
+        bump,
+    )]
+    pub staked_coupon: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct BuyCoupon<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        close = seller
+    )]
     pub listing: Account<'info, Listing>,
 
     #[account(mut)]
     pub coupon: Account<'info, Coupon>,
+
+    #[account(
+        init,
+        payer = buyer,
+        space = 8 + Sale::INIT_SPACE,
+        seeds = [
+            b"sale",
+            coupon.key().as_ref(),
+            coupon.sale_count.to_le_bytes().as_ref()
+        ],
+        bump
+    )]
+    pub sale: Account<'info, Sale>,
 
     /// CHECK: Seller receiving payment
     #[account(
@@ -563,11 +632,15 @@ pub struct BuyCoupon<'info> {
 
 #[derive(Accounts)]
 pub struct DelistCoupon<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        close = seller
+    )]
     pub listing: Account<'info, Listing>,
 
     pub coupon: Account<'info, Coupon>,
 
+    #[account(mut)]
     pub seller: Signer<'info>,
 }
 
@@ -673,6 +746,8 @@ pub struct Coupon {
     pub is_redeemed: bool,
     pub minted_at: i64,
     pub redeemed_at: Option<i64>,
+    pub listing_count: u32,  // Tracks how many times this coupon has been listed
+    pub sale_count: u32,     // Tracks how many times this coupon has been sold
     pub bump: u8,
 }
 
@@ -705,6 +780,20 @@ pub struct Listing {
     pub price_lamports: u64,
     pub is_active: bool,
     pub created_at: i64,
+    pub listing_number: u32,  // Which listing this is (1st, 2nd, 3rd...)
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct Sale {
+    pub listing: Pubkey,
+    pub coupon: Pubkey,
+    pub seller: Pubkey,
+    pub buyer: Pubkey,
+    pub price_lamports: u64,
+    pub sold_at: i64,
+    pub sale_number: u32,  // Which sale this is (1st, 2nd, 3rd...)
     pub bump: u8,
 }
 
@@ -759,4 +848,6 @@ pub enum DealError {
     InvalidListing,
     #[msg("No rewards to claim")]
     NoRewardsToClaim,
+    #[msg("Coupon is currently staked and cannot be redeemed, transferred, or listed")]
+    CouponStaked,
 }

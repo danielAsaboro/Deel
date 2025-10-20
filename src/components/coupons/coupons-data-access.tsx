@@ -13,6 +13,14 @@ import { buildGatewayTransaction, sendGatewayTransaction, gatewayTransactionTrac
 import { toast } from 'sonner'
 import { BN } from '@coral-xyz/anchor'
 
+export interface StakedCoupon {
+  publicKey: PublicKey
+  coupon: PublicKey
+  staker: PublicKey
+  stakedAt: BN
+  lastClaimAt: BN
+}
+
 export interface Coupon {
   publicKey: PublicKey
   deal: PublicKey
@@ -21,6 +29,7 @@ export interface Coupon {
   isRedeemed: boolean
   mintedAt: BN
   redeemedAt: BN | null
+  staked: StakedCoupon | null
 }
 
 export function useCouponsProgram() {
@@ -36,7 +45,7 @@ export function useCouponsProgram() {
   // Fetch user's coupons
   const userCoupons = useQuery({
     queryKey: ['coupons', 'user', publicKey?.toString(), { cluster }],
-    queryFn: async () => {
+    queryFn: async (): Promise<Coupon[]> => {
       if (!publicKey) return []
       const coupons = await program.account.coupon.all([
         {
@@ -46,10 +55,35 @@ export function useCouponsProgram() {
           },
         },
       ])
-      return coupons.map((coupon) => ({
-        publicKey: coupon.publicKey,
-        ...coupon.account,
-      })) as Coupon[]
+
+      // Check staking status for each coupon
+      const couponsWithStaking = await Promise.all(
+        coupons.map(async (coupon) => {
+          const [stakedCouponPda] = PublicKey.findProgramAddressSync(
+            [Buffer.from('staked_coupon'), coupon.publicKey.toBuffer()],
+            program.programId
+          )
+
+          let staked: StakedCoupon | null = null
+          try {
+            const stakedAccount = await program.account.stakedCoupon.fetch(stakedCouponPda)
+            staked = {
+              publicKey: stakedCouponPda,
+              ...stakedAccount,
+            } as StakedCoupon
+          } catch {
+            // Not staked, that's okay
+          }
+
+          return {
+            publicKey: coupon.publicKey,
+            ...coupon.account,
+            staked,
+          }
+        })
+      )
+
+      return couponsWithStaking as Coupon[]
     },
     enabled: !!program && !!publicKey,
   })

@@ -104,6 +104,32 @@ export type Basic = {
           "writable": true
         },
         {
+          "name": "sale",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  97,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "coupon"
+              },
+              {
+                "kind": "account",
+                "path": "coupon.sale_count",
+                "account": "coupon"
+              }
+            ]
+          }
+        },
+        {
           "name": "seller",
           "writable": true
         },
@@ -257,6 +283,7 @@ export type Basic = {
         },
         {
           "name": "seller",
+          "writable": true,
           "signer": true
         }
       ],
@@ -354,6 +381,11 @@ export type Basic = {
               {
                 "kind": "account",
                 "path": "coupon"
+              },
+              {
+                "kind": "account",
+                "path": "coupon.listing_count",
+                "account": "coupon"
               }
             ]
           }
@@ -366,6 +398,35 @@ export type Basic = {
         {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "stakedCoupon",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  100,
+                  95,
+                  99,
+                  111,
+                  117,
+                  112,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "coupon"
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -644,6 +705,35 @@ export type Basic = {
         {
           "name": "merchant",
           "signer": true
+        },
+        {
+          "name": "stakedCoupon",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  100,
+                  95,
+                  99,
+                  111,
+                  117,
+                  112,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "coupon"
+              }
+            ]
+          }
         }
       ],
       "args": []
@@ -733,6 +823,35 @@ export type Basic = {
         },
         {
           "name": "newOwner"
+        },
+        {
+          "name": "stakedCoupon",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  100,
+                  95,
+                  99,
+                  111,
+                  117,
+                  112,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "coupon"
+              }
+            ]
+          }
         }
       ],
       "args": []
@@ -894,6 +1013,19 @@ export type Basic = {
       ]
     },
     {
+      "name": "sale",
+      "discriminator": [
+        202,
+        64,
+        232,
+        171,
+        178,
+        172,
+        34,
+        183
+      ]
+    },
+    {
       "name": "stakedCoupon",
       "discriminator": [
         181,
@@ -982,6 +1114,11 @@ export type Basic = {
       "code": 6014,
       "name": "noRewardsToClaim",
       "msg": "No rewards to claim"
+    },
+    {
+      "code": 6015,
+      "name": "couponStaked",
+      "msg": "Coupon is currently staked and cannot be redeemed, transferred, or listed"
     }
   ],
   "types": [
@@ -1043,6 +1180,14 @@ export type Basic = {
             "type": {
               "option": "i64"
             }
+          },
+          {
+            "name": "listingCount",
+            "type": "u32"
+          },
+          {
+            "name": "saleCount",
+            "type": "u32"
           },
           {
             "name": "bump",
@@ -1165,6 +1310,10 @@ export type Basic = {
             "type": "i64"
           },
           {
+            "name": "listingNumber",
+            "type": "u32"
+          },
+          {
             "name": "bump",
             "type": "u8"
           }
@@ -1187,6 +1336,46 @@ export type Basic = {
           {
             "name": "admin",
             "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "sale",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "listing",
+            "type": "pubkey"
+          },
+          {
+            "name": "coupon",
+            "type": "pubkey"
+          },
+          {
+            "name": "seller",
+            "type": "pubkey"
+          },
+          {
+            "name": "buyer",
+            "type": "pubkey"
+          },
+          {
+            "name": "priceLamports",
+            "type": "u64"
+          },
+          {
+            "name": "soldAt",
+            "type": "i64"
+          },
+          {
+            "name": "saleNumber",
+            "type": "u32"
           },
           {
             "name": "bump",

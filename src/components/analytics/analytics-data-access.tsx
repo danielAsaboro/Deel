@@ -6,6 +6,13 @@ import { BN } from '@coral-xyz/anchor'
 import { useDealsProgram } from '../deals/deals-data-access'
 import { useCouponsProgram } from '../coupons/coupons-data-access'
 
+export interface MarketplaceSale {
+  listingPublicKey: PublicKey
+  couponPublicKey: PublicKey
+  priceLamports: BN
+  soldAt: BN
+}
+
 export interface MerchantAnalytics {
   totalDeals: number
   activeDeals: number
@@ -16,6 +23,12 @@ export interface MerchantAnalytics {
   redemptionRate: number
   totalCustomers: number
   dealPerformance: DealPerformance[]
+  // Marketplace metrics
+  marketplaceSales: number
+  marketplaceRevenue: BN
+  marketplaceFees: BN
+  marketplaceNetEarnings: BN
+  recentMarketplaceSales: MarketplaceSale[]
 }
 
 export interface DealPerformance {
@@ -51,6 +64,37 @@ export function useAnalyticsProgram() {
           },
         ])
 
+        // Fetch marketplace sales for this merchant (independent of deals)
+        const allSales = await dealsProgram.program.account.sale.all([
+          {
+            memcmp: {
+              offset: 8 + 32 + 32, // Skip discriminator + listing + coupon pubkeys
+              bytes: merchantPubkey.toBase58(),
+            },
+          },
+        ])
+
+        let marketplaceRevenue = new BN(0)
+        const recentMarketplaceSales: MarketplaceSale[] = []
+
+        allSales.forEach((sale) => {
+          const price = new BN(sale.account.priceLamports)
+          marketplaceRevenue = marketplaceRevenue.add(price)
+
+          recentMarketplaceSales.push({
+            listingPublicKey: sale.account.listing,
+            couponPublicKey: sale.account.coupon,
+            priceLamports: price,
+            soldAt: new BN(sale.account.soldAt),
+          })
+        })
+
+        recentMarketplaceSales.sort((a, b) => b.soldAt.toNumber() - a.soldAt.toNumber())
+
+        // Calculate platform fee (2.5%) and net earnings (97.5%)
+        const marketplaceFees = marketplaceRevenue.mul(new BN(25)).div(new BN(1000))
+        const marketplaceNetEarnings = marketplaceRevenue.sub(marketplaceFees)
+
         if (merchantDeals.length === 0) {
           return {
             totalDeals: 0,
@@ -62,6 +106,11 @@ export function useAnalyticsProgram() {
             redemptionRate: 0,
             totalCustomers: 0,
             dealPerformance: [],
+            marketplaceSales: recentMarketplaceSales.length,
+            marketplaceRevenue,
+            marketplaceFees,
+            marketplaceNetEarnings,
+            recentMarketplaceSales: recentMarketplaceSales.slice(0, 10), // Show last 10 sales
           }
         }
 
@@ -171,9 +220,14 @@ export function useAnalyticsProgram() {
           redemptionRate,
           totalCustomers: uniqueCustomers.size,
           dealPerformance: dealPerformance.sort((a, b) => b.couponsMinted - a.couponsMinted),
+          marketplaceSales: recentMarketplaceSales.length,
+          marketplaceRevenue,
+          marketplaceFees,
+          marketplaceNetEarnings,
+          recentMarketplaceSales: recentMarketplaceSales.slice(0, 10), // Show last 10 sales
         }
       },
-      enabled: !!merchantPubkey && !!dealsProgram.program && !!couponsProgram.program,
+      enabled: !!merchantPubkey && !!dealsProgram?.program && !!couponsProgram?.program,
     })
   }
 

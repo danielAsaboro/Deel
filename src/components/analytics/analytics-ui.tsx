@@ -7,6 +7,7 @@ import { MerchantAnalytics } from './analytics-data-access'
 import { LAMPORTS_PER_SOL } from '@solana/web3.js'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { useUsdcPrice } from '@/hooks/use-usdc-price'
+import { BN } from '@coral-xyz/anchor'
 
 export function AnalyticsDashboard({ analytics }: { analytics: MerchantAnalytics }) {
   const { lamportsToUsdc } = useUsdcPrice()
@@ -42,9 +43,9 @@ export function AnalyticsDashboard({ analytics }: { analytics: MerchantAnalytics
           subtitle={`${analytics.totalRedemptions} redeemed (${analytics.redemptionRate.toFixed(1)}%)`}
         />
         <MetricCard
-          title="Total Revenue"
-          value={`$${formatUSDC(analytics.totalRevenue.toNumber())} USDC`}
-          subtitle="From coupon sales"
+          title="Primary Sales Revenue"
+          value={`$${formatUSDC(analytics.totalRevenue.toNumber())}`}
+          subtitle="From direct coupon minting"
         />
         <MetricCard
           title="Average Rating"
@@ -52,6 +53,73 @@ export function AnalyticsDashboard({ analytics }: { analytics: MerchantAnalytics
           subtitle="⭐ Out of 5.0"
         />
       </div>
+
+      {/* Marketplace Earnings Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Marketplace Earnings</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div className="space-y-1">
+              <p className="text-sm text-muted-foreground">Coupons Sold</p>
+              <p className="text-2xl font-bold">{analytics.marketplaceSales}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm text-muted-foreground">Gross Revenue</p>
+              <p className="text-2xl font-bold">${formatUSDC(analytics.marketplaceRevenue.toNumber())}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm text-muted-foreground">Platform Fees (2.5%)</p>
+              <p className="text-2xl font-bold text-muted-foreground">-${formatUSDC(analytics.marketplaceFees.toNumber())}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm text-muted-foreground">Net Earnings</p>
+              <p className="text-2xl font-bold text-green-600 dark:text-green-400">${formatUSDC(analytics.marketplaceNetEarnings.toNumber())}</p>
+            </div>
+          </div>
+
+          {analytics.recentMarketplaceSales.length > 0 ? (
+            <>
+              <h3 className="text-lg font-semibold mb-3">Recent Sales</h3>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Coupon</TableHead>
+                    <TableHead className="text-right">Sale Price</TableHead>
+                    <TableHead className="text-right">Your Earnings (97.5%)</TableHead>
+                    <TableHead className="text-right">Platform Fee</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {analytics.recentMarketplaceSales.map((sale) => {
+                    const fee = sale.priceLamports.mul(new BN(25)).div(new BN(1000))
+                    const earnings = sale.priceLamports.sub(fee)
+                    return (
+                      <TableRow key={sale.listingPublicKey.toString()}>
+                        <TableCell className="font-mono text-sm">
+                          {sale.couponPublicKey.toString().slice(0, 8)}...
+                        </TableCell>
+                        <TableCell className="text-right font-semibold">
+                          ${formatUSDC(sale.priceLamports.toNumber())}
+                        </TableCell>
+                        <TableCell className="text-right text-green-600 dark:text-green-400 font-semibold">
+                          ${formatUSDC(earnings.toNumber())}
+                        </TableCell>
+                        <TableCell className="text-right text-muted-foreground">
+                          ${formatUSDC(fee.toNumber())}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </>
+          ) : (
+            <p className="text-muted-foreground text-center py-4">No marketplace sales yet</p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Charts Section */}
       {analytics.dealPerformance.length > 0 && (

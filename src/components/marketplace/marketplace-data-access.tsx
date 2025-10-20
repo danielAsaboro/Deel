@@ -3,7 +3,7 @@
 import { getBasicProgram, getBasicProgramId } from '@project/anchor'
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
 import { Cluster, PublicKey, SystemProgram, Transaction } from '@solana/web3.js'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { useCluster } from '../cluster/cluster-data-access'
 import { useAnchorProvider } from '../solana/solana-provider'
@@ -20,6 +20,15 @@ export interface Listing {
   priceLamports: BN
   isActive: boolean
   createdAt: BN
+}
+
+export interface ListingWithDeal extends Listing {
+  dealTitle?: string
+  dealDescription?: string
+  discountPercent?: number
+  dealCategory?: string
+  expiryTimestamp?: BN
+  merchant?: PublicKey
 }
 
 export interface CouponWithListing {
@@ -39,20 +48,48 @@ export function useMarketplaceProgram() {
   const transactionToast = useTransactionToast()
   const provider = useAnchorProvider()
   const gateway = useGateway()
+  const queryClient = useQueryClient()
   const programId = useMemo(() => getBasicProgramId(cluster.network as Cluster), [cluster])
   const program = useMemo(() => getBasicProgram(provider, programId), [provider, programId])
 
-  // Fetch all active listings
+  // Fetch all active listings with deal context
   const listings = useQuery({
     queryKey: ['listings', 'all', { cluster }],
-    queryFn: async () => {
+    queryFn: async (): Promise<ListingWithDeal[]> => {
       const allListings = await program.account.listing.all()
-      return allListings
-        .filter((l) => l.account.isActive)
-        .map((listing) => ({
-          publicKey: listing.publicKey,
-          ...listing.account,
-        })) as Listing[]
+      const activeListings = allListings.filter((l) => l.account.isActive)
+
+      // Enrich each listing with deal information
+      const listingsWithDeals = await Promise.all(
+        activeListings.map(async (listing) => {
+          try {
+            // Fetch the coupon to get the deal reference
+            const coupon = await program.account.coupon.fetch(listing.account.coupon)
+
+            // Fetch the deal
+            const deal = await program.account.deal.fetch(coupon.deal)
+
+            return {
+              publicKey: listing.publicKey,
+              ...listing.account,
+              dealTitle: deal.title,
+              dealDescription: deal.description,
+              discountPercent: deal.discountPercent,
+              dealCategory: deal.category,
+              expiryTimestamp: deal.expiryTimestamp,
+              merchant: deal.merchant,
+            } as ListingWithDeal
+          } catch (error) {
+            // If we can't fetch deal info, return listing without it
+            return {
+              publicKey: listing.publicKey,
+              ...listing.account,
+            } as ListingWithDeal
+          }
+        })
+      )
+
+      return listingsWithDeals
     },
     enabled: !!program,
   })
@@ -74,33 +111,57 @@ export function useMarketplaceProgram() {
 
       const couponsWithListings = await Promise.all(
         coupons.map(async (coupon) => {
-          const [listingPda] = PublicKey.findProgramAddressSync(
-            [Buffer.from('listing'), coupon.publicKey.toBuffer()],
+          let listing: Listing | null = null
+
+          // Check for active listing (most recent one if it exists)
+          if (coupon.account.listingCount > 0) {
+            const mostRecentListingNumber = coupon.account.listingCount - 1
+            const listingCountBuffer = Buffer.alloc(4)
+            listingCountBuffer.writeUInt32LE(mostRecentListingNumber)
+
+            const [listingPda] = PublicKey.findProgramAddressSync(
+              [Buffer.from('listing'), coupon.publicKey.toBuffer(), listingCountBuffer],
+              program.programId
+            )
+
+            try {
+              const listingAccount = await program.account.listing.fetch(listingPda)
+              if (listingAccount.isActive) {
+                listing = {
+                  publicKey: listingPda,
+                  ...listingAccount,
+                } as Listing
+              }
+            } catch {
+              // Listing doesn't exist or was closed, that's okay
+            }
+          }
+
+          // Check if coupon is staked
+          const [stakedCouponPda] = PublicKey.findProgramAddressSync(
+            [Buffer.from('staked_coupon'), coupon.publicKey.toBuffer()],
             program.programId
           )
 
-          let listing: Listing | null = null
+          let isStaked = false
           try {
-            const listingAccount = await program.account.listing.fetch(listingPda)
-            if (listingAccount.isActive) {
-              listing = {
-                publicKey: listingPda,
-                ...listingAccount,
-              } as Listing
-            }
+            await program.account.stakedCoupon.fetch(stakedCouponPda)
+            isStaked = true
           } catch {
-            // Listing doesn't exist, that's okay
+            // Not staked, that's okay
           }
 
           return {
             couponPublicKey: coupon.publicKey,
             ...coupon.account,
             listing,
+            isStaked,
           }
         })
       )
 
-      return couponsWithListings.filter((c) => !c.isRedeemed)
+      // Filter out redeemed and staked coupons
+      return couponsWithListings.filter((c) => !c.isRedeemed && !c.isStaked)
     },
     enabled: !!program && !!publicKey,
   })
@@ -117,8 +178,13 @@ export function useMarketplaceProgram() {
     }) => {
       if (!publicKey) throw new Error('Wallet not connected')
 
+      // Fetch coupon to get the current listing_count
+      const coupon = await program.account.coupon.fetch(couponPubkey)
+      const listingCountBuffer = Buffer.alloc(4)
+      listingCountBuffer.writeUInt32LE(coupon.listingCount)
+
       const [listingPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from('listing'), couponPubkey.toBuffer()],
+        [Buffer.from('listing'), couponPubkey.toBuffer(), listingCountBuffer],
         program.programId
       )
 
@@ -185,7 +251,7 @@ export function useMarketplaceProgram() {
           signature = sendResponse.result
 
           gatewayTransactionTracker.update(txId, { status: 'success', signature })
-          toast.success('Transaction sent via Gateway!')
+          toast.success('Coupon listed successfully!')
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error'
           gatewayTransactionTracker.update(txId, { status: 'failed', error: errorMessage })
@@ -209,8 +275,11 @@ export function useMarketplaceProgram() {
     },
     onSuccess: (signature) => {
       transactionToast(signature)
-      listings.refetch()
-      userCoupons.refetch()
+      // Invalidate all related queries for global state sync
+      queryClient.invalidateQueries({ queryKey: ['coupons'] })
+      queryClient.invalidateQueries({ queryKey: ['listings'] })
+      queryClient.invalidateQueries({ queryKey: ['marketplace'] })
+      toast.success('View your listing in the Marketplace tab!')
     },
     onError: (error) => {
       toast.error(`Failed to list coupon: ${error}`)
@@ -233,6 +302,17 @@ export function useMarketplaceProgram() {
     }) => {
       if (!publicKey) throw new Error('Wallet not connected')
 
+      // Fetch coupon to get the current sale_count
+      const coupon = await program.account.coupon.fetch(couponPubkey)
+      const saleCountBuffer = Buffer.alloc(4)
+      saleCountBuffer.writeUInt32LE(coupon.saleCount)
+
+      // Derive Sale PDA
+      const [salePda] = PublicKey.findProgramAddressSync(
+        [Buffer.from('sale'), couponPubkey.toBuffer(), saleCountBuffer],
+        program.programId
+      )
+
       let signature: string
 
       // Check if Gateway is enabled and configured
@@ -253,6 +333,7 @@ export function useMarketplaceProgram() {
             .accounts({
               listing: listingPubkey,
               coupon: couponPubkey,
+              sale: salePda,
               seller: sellerPubkey,
               buyer: publicKey,
               platformWallet,
@@ -312,6 +393,7 @@ export function useMarketplaceProgram() {
           .accounts({
             listing: listingPubkey,
             coupon: couponPubkey,
+            sale: salePda,
             seller: sellerPubkey,
             buyer: publicKey,
             platformWallet,
@@ -324,8 +406,13 @@ export function useMarketplaceProgram() {
     },
     onSuccess: (signature) => {
       transactionToast(signature)
-      listings.refetch()
-      userCoupons.refetch()
+      // Invalidate all related queries for global state sync
+      queryClient.invalidateQueries({ queryKey: ['coupons'] })
+      queryClient.invalidateQueries({ queryKey: ['listings'] })
+      queryClient.invalidateQueries({ queryKey: ['marketplace'] })
+      queryClient.invalidateQueries({ queryKey: ['sales'] })
+      queryClient.invalidateQueries({ queryKey: ['analytics'] })
+      toast.success('Coupon purchased! Check "My Coupons" to see it.')
     },
     onError: (error) => {
       toast.error(`Failed to buy coupon: ${error}`)
@@ -429,8 +516,11 @@ export function useMarketplaceProgram() {
     },
     onSuccess: (signature) => {
       transactionToast(signature)
-      listings.refetch()
-      userCoupons.refetch()
+      // Invalidate all related queries for global state sync
+      queryClient.invalidateQueries({ queryKey: ['coupons'] })
+      queryClient.invalidateQueries({ queryKey: ['listings'] })
+      queryClient.invalidateQueries({ queryKey: ['marketplace'] })
+      toast.success('Coupon delisted successfully!')
     },
     onError: (error) => {
       toast.error(`Failed to delist coupon: ${error}`)

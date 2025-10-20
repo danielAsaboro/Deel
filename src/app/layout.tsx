@@ -6,7 +6,8 @@ import React from 'react'
 
 export const metadata: Metadata = {
   title: 'Deal - Web3 Discount Marketplace',
-  description: 'The next evolution of Groupon - user-owned, borderless, and Web3-powered. Trade NFT coupons, stake for rewards, and discover exclusive deals on Solana.',
+  description:
+    'The next evolution of Groupon - user-owned, borderless, and Web3-powered. Trade NFT coupons, stake for rewards, and discover exclusive deals on Solana.',
 }
 
 const links: { label: string; path: string }[] = [

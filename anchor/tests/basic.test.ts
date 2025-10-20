@@ -1,6 +1,7 @@
 import * as anchor from '@coral-xyz/anchor'
-import { Program, BN } from '@coral-xyz/anchor'
+import { Program } from '@coral-xyz/anchor'
 import { Basic } from '../target/types/basic'
+import BN from 'bn.js'
 import {
   Keypair,
   PublicKey,
@@ -150,7 +151,7 @@ describe('Deal Discovery Platform', () => {
     const merchantBalanceBefore = await provider.connection.getBalance(merchant.publicKey)
 
     await program.methods
-      .mintCoupon(dealPda)
+      .mintCoupon(dealPda, 'ipfs://test-metadata')
       .accounts({
         deal: dealPda,
         coupon: couponPda,
@@ -192,12 +193,19 @@ describe('Deal Discovery Platform', () => {
     const allCoupons = await program.account.coupon.all()
     const coupon = allCoupons[0]
 
+    // Derive staked coupon PDA (to check it's not staked)
+    const [stakedCouponPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from('staked_coupon'), coupon.publicKey.toBuffer()],
+      program.programId
+    )
+
     await program.methods
       .redeemCoupon()
       .accounts({
         coupon: coupon.publicKey,
         deal: dealPda,
         merchant: merchant.publicKey,
+        stakedCoupon: stakedCouponPda,
       })
       .signers([merchant])
       .rpc()
@@ -235,7 +243,7 @@ describe('Deal Discovery Platform', () => {
     )
 
     await program.methods
-      .mintCoupon(dealPda)
+      .mintCoupon(dealPda, 'ipfs://test-metadata')
       .accounts({
         deal: dealPda,
         coupon: couponPda,
@@ -256,12 +264,19 @@ describe('Deal Discovery Platform', () => {
     // Transfer to merchant
     const newOwner = merchant.publicKey
 
+    // Derive staked coupon PDA (to check it's not staked)
+    const [stakedCouponPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from('staked_coupon'), couponPda.toBuffer()],
+      program.programId
+    )
+
     await program.methods
       .transferCoupon()
       .accounts({
         coupon: couponPda,
         currentOwner: user.publicKey,
         newOwner: newOwner,
+        stakedCoupon: stakedCouponPda,
       })
       .signers([user])
       .rpc()
@@ -334,7 +349,7 @@ describe('Deal Discovery Platform', () => {
 
     try {
       await program.methods
-        .mintCoupon(dealPda)
+        .mintCoupon(dealPda, 'ipfs://test-metadata')
         .accounts({
           deal: dealPda,
           coupon: couponPda,
@@ -672,14 +687,25 @@ describe('Deal Discovery Platform', () => {
         .signers([seller, mintKeypair])
         .rpc()
 
+      // Fetch coupon to get listing_count (should be 0 for new coupon)
+      const couponData = await program.account.coupon.fetch(listingCouponPda)
+      const listingCountBuffer = Buffer.alloc(4)
+      listingCountBuffer.writeUInt32LE(couponData.listingCount)
+
       listingPda = PublicKey.findProgramAddressSync(
-        [Buffer.from('listing'), listingCouponPda.toBuffer()],
+        [Buffer.from('listing'), listingCouponPda.toBuffer(), listingCountBuffer],
         program.programId
       )[0]
     })
 
     it('Lists a coupon for sale', async () => {
       const price = new BN(50_000_000) // 0.05 SOL
+
+      // Derive staked coupon PDA
+      const [stakedCouponPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from('staked_coupon'), listingCouponPda.toBuffer()],
+        program.programId
+      )
 
       await program.methods
         .listCoupon(price)
@@ -688,6 +714,7 @@ describe('Deal Discovery Platform', () => {
           listing: listingPda,
           seller: seller.publicKey,
           systemProgram: SystemProgram.programId,
+          stakedCoupon: stakedCouponPda,
         })
         .signers([seller])
         .rpc()
@@ -753,10 +780,20 @@ describe('Deal Discovery Platform', () => {
         .signers([anotherSeller, mintKeypair])
         .rpc()
 
+      // Fetch coupon to get listing_count
+      const testCoupon = await program.account.coupon.fetch(couponPda)
+      const testListingCountBuffer = Buffer.alloc(4)
+      testListingCountBuffer.writeUInt32LE(testCoupon.listingCount)
+
       const testListingPda = PublicKey.findProgramAddressSync(
-        [Buffer.from('listing'), couponPda.toBuffer()],
+        [Buffer.from('listing'), couponPda.toBuffer(), testListingCountBuffer],
         program.programId
       )[0]
+
+      const [stakedCouponPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from('staked_coupon'), couponPda.toBuffer()],
+        program.programId
+      )
 
       try {
         await program.methods
@@ -766,6 +803,7 @@ describe('Deal Discovery Platform', () => {
             listing: testListingPda,
             seller: anotherSeller.publicKey,
             systemProgram: SystemProgram.programId,
+            stakedCoupon: stakedCouponPda,
           })
           .signers([anotherSeller])
           .rpc()
@@ -776,7 +814,7 @@ describe('Deal Discovery Platform', () => {
       }
     })
 
-    it('Buys a listed coupon', async () => {
+    it('Buys a listed coupon and creates Sale PDA', async () => {
       const platformWallet = Keypair.generate().publicKey
 
       const sellerBalanceBefore = await provider.connection.getBalance(seller.publicKey)
@@ -784,11 +822,27 @@ describe('Deal Discovery Platform', () => {
 
       const listing = await program.account.listing.fetch(listingPda)
 
+      // Fetch coupon to get sale_count
+      const couponForSale = await program.account.coupon.fetch(listingCouponPda)
+      const saleCountBuffer = Buffer.alloc(4)
+      saleCountBuffer.writeUInt32LE(couponForSale.saleCount)
+
+      // Derive Sale PDA using counter-based system
+      const [salePda] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from('sale'),
+          listingCouponPda.toBuffer(),
+          saleCountBuffer
+        ],
+        program.programId
+      )
+
       await program.methods
         .buyCoupon()
         .accounts({
           listing: listingPda,
           coupon: listingCouponPda,
+          sale: salePda,
           seller: seller.publicKey,
           buyer: buyer.publicKey,
           platformWallet: platformWallet,
@@ -798,8 +852,8 @@ describe('Deal Discovery Platform', () => {
         .rpc()
 
       // Verify ownership transferred
-      const coupon = await program.account.coupon.fetch(listingCouponPda)
-      assert.equal(coupon.owner.toString(), buyer.publicKey.toString())
+      const boughtCoupon = await program.account.coupon.fetch(listingCouponPda)
+      assert.equal(boughtCoupon.owner.toString(), buyer.publicKey.toString())
 
       // Verify listing deactivated
       const updatedListing = await program.account.listing.fetch(listingPda)
@@ -811,15 +865,43 @@ describe('Deal Discovery Platform', () => {
       const sellerAmount = listing.priceLamports.toNumber() - platformFee
 
       assert.equal(sellerBalanceAfter - sellerBalanceBefore, sellerAmount)
+
+      // Verify Sale PDA was created with correct data
+      const saleAccount = await program.account.sale.fetch(salePda)
+      assert.equal(saleAccount.listing.toString(), listingPda.toString())
+      assert.equal(saleAccount.coupon.toString(), listingCouponPda.toString())
+      assert.equal(saleAccount.seller.toString(), seller.publicKey.toString())
+      assert.equal(saleAccount.buyer.toString(), buyer.publicKey.toString())
+      assert.equal(saleAccount.priceLamports.toString(), listing.priceLamports.toString())
+      assert.isAbove(saleAccount.soldAt.toNumber(), 0)
     })
 
     it('Prevents buying inactive listing', async () => {
+      // The listing was already bought and closed, so this should fail
+      // With counter-based PDAs and close constraint, the listing account is closed after buy
+      // So trying to buy again will fail with AccountNotInitialized
+
+      // Fetch coupon to get current sale_count
+      const couponForInactiveTest = await program.account.coupon.fetch(listingCouponPda)
+      const saleCountBuffer = Buffer.alloc(4)
+      saleCountBuffer.writeUInt32LE(couponForInactiveTest.saleCount)
+
+      const [salePda] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from('sale'),
+          listingCouponPda.toBuffer(),
+          saleCountBuffer
+        ],
+        program.programId
+      )
+
       try {
         await program.methods
           .buyCoupon()
           .accounts({
-            listing: listingPda,
+            listing: listingPda,  // This listing was closed, so account doesn't exist
             coupon: listingCouponPda,
+            sale: salePda,
             seller: seller.publicKey,
             buyer: merchant.publicKey,
             platformWallet: Keypair.generate().publicKey,
@@ -830,8 +912,51 @@ describe('Deal Discovery Platform', () => {
 
         assert.fail('Should have thrown error')
       } catch (error) {
-        assert.include(error.message, 'ListingInactive')
+        // With close constraint, listing account is closed, so we get AccountNotInitialized
+        assert.isTrue(
+          error.message.includes('AccountNotInitialized') || error.message.includes('ListingInactive'),
+          'Should fail when trying to buy closed listing'
+        )
       }
+    })
+
+    it('Queries Sale accounts by seller (Analytics)', async () => {
+      // This test verifies the analytics query works correctly
+      // Query all sales where the seller is our test seller
+      const sellerSales = await program.account.sale.all([
+        {
+          memcmp: {
+            offset: 8 + 32 + 32, // Skip discriminator + listing + coupon pubkeys
+            bytes: seller.publicKey.toBase58(),
+          },
+        },
+      ])
+
+      // Should have at least 1 sale from the previous test
+      assert.isAtLeast(sellerSales.length, 1)
+
+      // Verify the sale data
+      const sale = sellerSales[0].account
+      assert.equal(sale.seller.toString(), seller.publicKey.toString())
+      assert.equal(sale.buyer.toString(), buyer.publicKey.toString())
+      assert.isAbove(sale.priceLamports.toNumber(), 0)
+      assert.isAbove(sale.soldAt.toNumber(), 0)
+
+      // Calculate marketplace revenue (this is what analytics does)
+      let totalRevenue = new BN(0)
+      sellerSales.forEach((saleData) => {
+        totalRevenue = totalRevenue.add(new BN(saleData.account.priceLamports))
+      })
+
+      assert.isAbove(totalRevenue.toNumber(), 0)
+
+      // Calculate fees (2.5%)
+      const fees = totalRevenue.mul(new BN(25)).div(new BN(1000))
+      const netEarnings = totalRevenue.sub(fees)
+
+      assert.isAbove(fees.toNumber(), 0)
+      assert.isAbove(netEarnings.toNumber(), 0)
+      assert.isTrue(netEarnings.gt(fees)) // Net should be greater than fees
     })
 
     it('Delists a coupon', async () => {
@@ -889,10 +1014,20 @@ describe('Deal Discovery Platform', () => {
         .signers([anotherSeller, mintKeypair])
         .rpc()
 
+      // Fetch coupon to get listing_count
+      const delistCoupon = await program.account.coupon.fetch(couponPda)
+      const delistListingCountBuffer = Buffer.alloc(4)
+      delistListingCountBuffer.writeUInt32LE(delistCoupon.listingCount)
+
       const delistListingPda = PublicKey.findProgramAddressSync(
-        [Buffer.from('listing'), couponPda.toBuffer()],
+        [Buffer.from('listing'), couponPda.toBuffer(), delistListingCountBuffer],
         program.programId
       )[0]
+
+      const [stakedCouponPdaDelist] = PublicKey.findProgramAddressSync(
+        [Buffer.from('staked_coupon'), couponPda.toBuffer()],
+        program.programId
+      )
 
       // List it
       await program.methods
@@ -902,6 +1037,7 @@ describe('Deal Discovery Platform', () => {
           listing: delistListingPda,
           seller: anotherSeller.publicKey,
           systemProgram: SystemProgram.programId,
+          stakedCoupon: stakedCouponPdaDelist,
         })
         .signers([anotherSeller])
         .rpc()
@@ -917,8 +1053,14 @@ describe('Deal Discovery Platform', () => {
         .signers([anotherSeller])
         .rpc()
 
-      const listing = await program.account.listing.fetch(delistListingPda)
-      assert.isFalse(listing.isActive)
+      // With close constraint, listing account is closed after delist
+      // Verify account no longer exists
+      try {
+        await program.account.listing.fetch(delistListingPda)
+        assert.fail('Listing account should be closed')
+      } catch (error) {
+        assert.include(error.message, 'Account does not exist')
+      }
     })
 
     it('Prevents non-owner from delisting', async () => {
@@ -937,6 +1079,224 @@ describe('Deal Discovery Platform', () => {
       } catch (error) {
         assert.include(error.message, 'NotOwner')
       }
+    })
+
+    it('COMPREHENSIVE: Tests full relisting flow (mint → list → buy → relist → buy)', async () => {
+      console.log('\n🧪 Testing Complete Relisting Flow\n')
+
+      // Setup wallets
+      const originalSeller = Keypair.generate()
+      const firstBuyer = Keypair.generate()
+      const secondBuyer = Keypair.generate()
+
+      // Airdrop SOL
+      await Promise.all([
+        provider.connection.requestAirdrop(originalSeller.publicKey, 5 * anchor.web3.LAMPORTS_PER_SOL),
+        provider.connection.requestAirdrop(firstBuyer.publicKey, 5 * anchor.web3.LAMPORTS_PER_SOL),
+        provider.connection.requestAirdrop(secondBuyer.publicKey, 5 * anchor.web3.LAMPORTS_PER_SOL),
+      ])
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+
+      // Step 1: Mint a new coupon
+      console.log('1️⃣  Minting coupon...')
+      dealAccount = await program.account.deal.fetch(dealPda)
+      const mintKeypair = Keypair.generate()
+
+      const couponPda = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from('coupon'),
+          dealPda.toBuffer(),
+          dealAccount.currentSupply.toArrayLike(Buffer, 'le', 8),
+        ],
+        program.programId
+      )[0]
+
+      const userTokenAccount = getAssociatedTokenAddressSync(
+        mintKeypair.publicKey,
+        originalSeller.publicKey
+      )
+
+      const [metadataPda] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from('metadata'),
+          new PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s').toBuffer(),
+          mintKeypair.publicKey.toBuffer(),
+        ],
+        new PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s')
+      )
+
+      await program.methods
+        .mintCoupon(dealPda, 'ipfs://relisting-test')
+        .accounts({
+          deal: dealPda,
+          coupon: couponPda,
+          mint: mintKeypair.publicKey,
+          tokenAccount: userTokenAccount,
+          metadata: metadataPda,
+          merchant: merchant.publicKey,
+          user: originalSeller.publicKey,
+          rent: SYSVAR_RENT_PUBKEY,
+          systemProgram: SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+          tokenMetadataProgram: new PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s'),
+        })
+        .signers([originalSeller, mintKeypair])
+        .rpc()
+
+      let couponAccount = await program.account.coupon.fetch(couponPda)
+      assert.equal(couponAccount.listingCount, 0, 'Initial listing_count should be 0')
+      assert.equal(couponAccount.saleCount, 0, 'Initial sale_count should be 0')
+      console.log('✅ Coupon minted')
+
+      // Step 2: List coupon for first time (listing #0)
+      console.log('2️⃣  Listing coupon (listing #0)...')
+      const listing0CountBuffer = Buffer.alloc(4)
+      listing0CountBuffer.writeUInt32LE(0)
+
+      const listing0Pda = PublicKey.findProgramAddressSync(
+        [Buffer.from('listing'), couponPda.toBuffer(), listing0CountBuffer],
+        program.programId
+      )[0]
+
+      const [stakedCoupon0] = PublicKey.findProgramAddressSync(
+        [Buffer.from('staked_coupon'), couponPda.toBuffer()],
+        program.programId
+      )
+
+      await program.methods
+        .listCoupon(new BN(100_000_000)) // 0.1 SOL
+        .accounts({
+          coupon: couponPda,
+          listing: listing0Pda,
+          seller: originalSeller.publicKey,
+          systemProgram: SystemProgram.programId,
+          stakedCoupon: stakedCoupon0,
+        })
+        .signers([originalSeller])
+        .rpc()
+
+      couponAccount = await program.account.coupon.fetch(couponPda)
+      assert.equal(couponAccount.listingCount, 1, 'listing_count should increment to 1')
+      console.log('✅ Listed (listing_count = 1)')
+
+      // Step 3: First buyer purchases (sale #0)
+      console.log('3️⃣  First buyer purchasing (sale #0)...')
+      const sale0CountBuffer = Buffer.alloc(4)
+      sale0CountBuffer.writeUInt32LE(0)
+
+      const sale0Pda = PublicKey.findProgramAddressSync(
+        [Buffer.from('sale'), couponPda.toBuffer(), sale0CountBuffer],
+        program.programId
+      )[0]
+
+      await program.methods
+        .buyCoupon()
+        .accounts({
+          listing: listing0Pda,
+          coupon: couponPda,
+          sale: sale0Pda,
+          seller: originalSeller.publicKey,
+          buyer: firstBuyer.publicKey,
+          platformWallet: merchant.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([firstBuyer])
+        .rpc()
+
+      couponAccount = await program.account.coupon.fetch(couponPda)
+      assert.equal(couponAccount.owner.toString(), firstBuyer.publicKey.toString(), 'Ownership should transfer to first buyer')
+      assert.equal(couponAccount.saleCount, 1, 'sale_count should increment to 1')
+      console.log('✅ Purchased (sale_count = 1, owner = firstBuyer)')
+
+      // Verify listing #0 was closed
+      try {
+        await program.account.listing.fetch(listing0Pda)
+        assert.fail('Listing #0 should be closed')
+      } catch (error) {
+        assert.include(error.message, 'Account does not exist')
+      }
+      console.log('✅ Listing #0 closed')
+
+      // Step 4: First buyer RELISTS the coupon (listing #1)
+      console.log('4️⃣  Relisting coupon (listing #1)...')
+      const listing1CountBuffer = Buffer.alloc(4)
+      listing1CountBuffer.writeUInt32LE(1)
+
+      const listing1Pda = PublicKey.findProgramAddressSync(
+        [Buffer.from('listing'), couponPda.toBuffer(), listing1CountBuffer],
+        program.programId
+      )[0]
+
+      await program.methods
+        .listCoupon(new BN(150_000_000)) // 0.15 SOL (higher price)
+        .accounts({
+          coupon: couponPda,
+          listing: listing1Pda,
+          seller: firstBuyer.publicKey,
+          systemProgram: SystemProgram.programId,
+          stakedCoupon: stakedCoupon0,
+        })
+        .signers([firstBuyer])
+        .rpc()
+
+      couponAccount = await program.account.coupon.fetch(couponPda)
+      assert.equal(couponAccount.listingCount, 2, 'listing_count should increment to 2')
+      console.log('✅ Relisted successfully! (listing_count = 2)')
+
+      // Step 5: Second buyer purchases the relisted coupon (sale #1)
+      console.log('5️⃣  Second buyer purchasing relisted coupon (sale #1)...')
+      const sale1CountBuffer = Buffer.alloc(4)
+      sale1CountBuffer.writeUInt32LE(1)
+
+      const sale1Pda = PublicKey.findProgramAddressSync(
+        [Buffer.from('sale'), couponPda.toBuffer(), sale1CountBuffer],
+        program.programId
+      )[0]
+
+      await program.methods
+        .buyCoupon()
+        .accounts({
+          listing: listing1Pda,
+          coupon: couponPda,
+          sale: sale1Pda,
+          seller: firstBuyer.publicKey,
+          buyer: secondBuyer.publicKey,
+          platformWallet: merchant.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([secondBuyer])
+        .rpc()
+
+      couponAccount = await program.account.coupon.fetch(couponPda)
+      assert.equal(couponAccount.owner.toString(), secondBuyer.publicKey.toString(), 'Ownership should transfer to second buyer')
+      assert.equal(couponAccount.saleCount, 2, 'sale_count should increment to 2')
+      console.log('✅ Second purchase complete (sale_count = 2, owner = secondBuyer)')
+
+      // Verify listing #1 was closed
+      try {
+        await program.account.listing.fetch(listing1Pda)
+        assert.fail('Listing #1 should be closed')
+      } catch (error) {
+        assert.include(error.message, 'Account does not exist')
+      }
+      console.log('✅ Listing #1 closed')
+
+      // Step 6: Verify both sale records exist
+      console.log('6️⃣  Verifying sale records...')
+      const sale0 = await program.account.sale.fetch(sale0Pda)
+      assert.equal(sale0.seller.toString(), originalSeller.publicKey.toString())
+      assert.equal(sale0.buyer.toString(), firstBuyer.publicKey.toString())
+      assert.equal(sale0.saleNumber, 0)
+      console.log('✅ Sale #0 record verified')
+
+      const sale1 = await program.account.sale.fetch(sale1Pda)
+      assert.equal(sale1.seller.toString(), firstBuyer.publicKey.toString())
+      assert.equal(sale1.buyer.toString(), secondBuyer.publicKey.toString())
+      assert.equal(sale1.saleNumber, 1)
+      console.log('✅ Sale #1 record verified')
+
+      console.log('\n🎉 RELISTING TEST PASSED! Counter-based PDAs work perfectly!\n')
     })
   })
 })
