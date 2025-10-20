@@ -99,8 +99,15 @@ pub mod basic {
         mint_to(cpi_context, 1)?;
 
         // Create metadata with provided IPFS URI
+        // Truncate title to ensure name fits within 32 character limit
+        let truncated_title = if deal.title.len() > 20 {
+            format!("{}...", &deal.title[..17])
+        } else {
+            deal.title.clone()
+        };
+        
         let data = DataV2 {
-            name: format!("{} - Coupon #{}", deal.title, deal.current_supply + 1),
+            name: format!("{} #{}", truncated_title, deal.current_supply + 1),
             symbol: "DEAL".to_string(),
             uri: metadata_uri,
             seller_fee_basis_points: 0,
