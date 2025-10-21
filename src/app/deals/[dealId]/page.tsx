@@ -44,3 +44,4 @@ export default function DealDetailPage({ params }: { params: Promise<{ dealId: s
   )
 }
 
+

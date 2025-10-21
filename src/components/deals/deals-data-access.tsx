@@ -714,13 +714,10 @@ export function useDealsProgram() {
       const timestamp = Math.floor(Date.now() / 1000)
 
       // Derive the comment PDA
+      const timestampBuffer = new BN(timestamp).toArrayLike(Buffer, 'le', 8)
+
       const [commentPda] = PublicKey.findProgramAddressSync(
-        [
-          Buffer.from('comment'),
-          dealAddress.toBuffer(),
-          publicKey.toBuffer(),
-          Buffer.from(timestamp.toString().slice(0, 8)), // Use first 8 chars of timestamp for uniqueness
-        ],
+        [Buffer.from('comment'), dealAddress.toBuffer(), publicKey.toBuffer(), timestampBuffer],
         program.programId
       )
 
