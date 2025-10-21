@@ -7,13 +7,26 @@ import {
   PublicKey,
   SystemProgram,
   SYSVAR_RENT_PUBKEY,
+  Transaction,
 } from '@solana/web3.js'
 import {
   TOKEN_PROGRAM_ID,
   ASSOCIATED_TOKEN_PROGRAM_ID,
   getAssociatedTokenAddressSync,
+  createAssociatedTokenAccountInstruction,
+  createMintToInstruction,
+  getMinimumBalanceForRentExemptMint,
+  MINT_SIZE,
+  createInitializeMintInstruction,
 } from '@solana/spl-token'
 import { assert } from 'chai'
+import * as fs from 'fs'
+import * as path from 'path'
+import { fileURLToPath } from 'url'
+
+// ES module equivalent of __dirname
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 describe('Deal Discovery Platform', () => {
   const provider = anchor.AnchorProvider.env()
@@ -24,6 +37,13 @@ describe('Deal Discovery Platform', () => {
     'metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s'
   )
 
+  // USDC constants
+  const USDC_DECIMALS = 6
+  let usdcMint: Keypair
+  let usdcMintAuthority: Keypair
+  let merchantUsdcAccount: PublicKey
+  let userUsdcAccount: PublicKey
+
   let merchant: Keypair
   let user: Keypair
   let dealPda: PublicKey
@@ -31,10 +51,52 @@ describe('Deal Discovery Platform', () => {
   let dealAccount: any
 
   before(async () => {
+    console.log('\n🔧 Setting up test environment...\n')
+
+    // Load USDC keypairs
+    const keysDir = path.join(__dirname, '..', 'keys')
+    const mintPath = path.join(keysDir, 'usdc-mint.json')
+    const authorityPath = path.join(keysDir, 'usdc-mint-authority.json')
+
+    usdcMint = Keypair.fromSecretKey(
+      new Uint8Array(JSON.parse(fs.readFileSync(mintPath, 'utf-8')))
+    )
+    usdcMintAuthority = Keypair.fromSecretKey(
+      new Uint8Array(JSON.parse(fs.readFileSync(authorityPath, 'utf-8')))
+    )
+
+    console.log('USDC Mint:', usdcMint.publicKey.toString())
+
+    // Create USDC mint on-chain
+    const mintExists = await provider.connection.getAccountInfo(usdcMint.publicKey)
+    if (!mintExists) {
+      console.log('Creating USDC mint on-chain...')
+      const lamports = await getMinimumBalanceForRentExemptMint(provider.connection)
+      const createMintTx = new Transaction().add(
+        SystemProgram.createAccount({
+          fromPubkey: provider.wallet.publicKey,
+          newAccountPubkey: usdcMint.publicKey,
+          space: MINT_SIZE,
+          lamports,
+          programId: TOKEN_PROGRAM_ID,
+        }),
+        createInitializeMintInstruction(
+          usdcMint.publicKey,
+          USDC_DECIMALS,
+          usdcMintAuthority.publicKey,
+          null
+        )
+      )
+      await provider.sendAndConfirm(createMintTx, [usdcMint])
+      console.log('✅ USDC mint created')
+    } else {
+      console.log('✅ USDC mint already exists')
+    }
+
     merchant = Keypair.generate()
     user = Keypair.generate()
 
-    // Airdrop SOL to merchant and user
+    // Airdrop SOL for transaction fees
     const merchantAirdrop = await provider.connection.requestAirdrop(
       merchant.publicKey,
       2 * anchor.web3.LAMPORTS_PER_SOL
@@ -46,6 +108,64 @@ describe('Deal Discovery Platform', () => {
 
     await provider.connection.confirmTransaction(merchantAirdrop)
     await provider.connection.confirmTransaction(userAirdrop)
+
+    console.log('✅ SOL airdropped to test wallets')
+
+    // Create USDC token accounts for merchant and user
+    merchantUsdcAccount = getAssociatedTokenAddressSync(
+      usdcMint.publicKey,
+      merchant.publicKey
+    )
+
+    userUsdcAccount = getAssociatedTokenAddressSync(
+      usdcMint.publicKey,
+      user.publicKey
+    )
+
+    const tx = new Transaction()
+      .add(
+        createAssociatedTokenAccountInstruction(
+          provider.wallet.publicKey,
+          merchantUsdcAccount,
+          merchant.publicKey,
+          usdcMint.publicKey
+        )
+      )
+      .add(
+        createAssociatedTokenAccountInstruction(
+          provider.wallet.publicKey,
+          userUsdcAccount,
+          user.publicKey,
+          usdcMint.publicKey
+        )
+      )
+
+    await provider.sendAndConfirm(tx)
+    console.log('✅ USDC token accounts created')
+
+    // Mint USDC to test wallets (1000 USDC each)
+    const mintAmount = 1000 * 10 ** USDC_DECIMALS
+
+    const mintTx = new Transaction()
+      .add(
+        createMintToInstruction(
+          usdcMint.publicKey,
+          merchantUsdcAccount,
+          usdcMintAuthority.publicKey,
+          mintAmount
+        )
+      )
+      .add(
+        createMintToInstruction(
+          usdcMint.publicKey,
+          userUsdcAccount,
+          usdcMintAuthority.publicKey,
+          mintAmount
+        )
+      )
+
+    await provider.sendAndConfirm(mintTx, [usdcMintAuthority])
+    console.log('✅ USDC minted to test wallets (1000 USDC each)\n')
   })
 
   it('Creates a deal', async () => {
@@ -147,8 +267,9 @@ describe('Deal Discovery Platform', () => {
       TOKEN_METADATA_PROGRAM_ID
     )
 
-    const userBalanceBefore = await provider.connection.getBalance(user.publicKey)
-    const merchantBalanceBefore = await provider.connection.getBalance(merchant.publicKey)
+    // Get USDC balances before
+    const userUsdcBefore = await provider.connection.getTokenAccountBalance(userUsdcAccount)
+    const merchantUsdcBefore = await provider.connection.getTokenAccountBalance(merchantUsdcAccount)
 
     await program.methods
       .mintCoupon(dealPda, 'ipfs://test-metadata')
@@ -158,6 +279,8 @@ describe('Deal Discovery Platform', () => {
         mint: mintKeypair.publicKey,
         tokenAccount: userTokenAccount,
         metadata: metadataPda,
+        userUsdcAccount,
+        merchantUsdcAccount,
         merchant: merchant.publicKey,
         user: user.publicKey,
         rent: SYSVAR_RENT_PUBKEY,
@@ -180,12 +303,21 @@ describe('Deal Discovery Platform', () => {
     const updatedDealAccount = await program.account.deal.fetch(dealPda)
     assert.equal(updatedDealAccount.currentSupply.toString(), '1')
 
-    // Verify payment was transferred (approximately, accounting for transaction fees)
-    const userBalanceAfter = await provider.connection.getBalance(user.publicKey)
-    const merchantBalanceAfter = await provider.connection.getBalance(merchant.publicKey)
+    // Verify USDC payment was transferred
+    const userUsdcAfter = await provider.connection.getTokenAccountBalance(userUsdcAccount)
+    const merchantUsdcAfter = await provider.connection.getTokenAccountBalance(merchantUsdcAccount)
 
-    assert.isTrue(userBalanceAfter < userBalanceBefore - dealAccount.priceLamports.toNumber())
-    assert.equal(merchantBalanceAfter - merchantBalanceBefore, dealAccount.priceLamports.toNumber())
+    const paidAmount = dealAccount.priceLamports.toNumber()
+    assert.equal(
+      Number(userUsdcBefore.value.amount) - Number(userUsdcAfter.value.amount),
+      paidAmount,
+      'User should have paid correct USDC amount'
+    )
+    assert.equal(
+      Number(merchantUsdcAfter.value.amount) - Number(merchantUsdcBefore.value.amount),
+      paidAmount,
+      'Merchant should have received correct USDC amount'
+    )
   })
 
   it('Redeems a coupon', async () => {
@@ -250,6 +382,8 @@ describe('Deal Discovery Platform', () => {
         mint: mintKeypair.publicKey,
         tokenAccount: userTokenAccount,
         metadata: metadataPda,
+        userUsdcAccount,
+        merchantUsdcAccount,
         merchant: merchant.publicKey,
         user: user.publicKey,
         rent: SYSVAR_RENT_PUBKEY,
@@ -356,6 +490,8 @@ describe('Deal Discovery Platform', () => {
           mint: mintKeypair.publicKey,
           tokenAccount: userTokenAccount,
           metadata: metadataPda,
+          userUsdcAccount,
+          merchantUsdcAccount,
           merchant: merchant.publicKey,
           user: user.publicKey,
           rent: SYSVAR_RENT_PUBKEY,
@@ -623,12 +759,15 @@ describe('Deal Discovery Platform', () => {
     let listingPda: PublicKey
     let seller: Keypair
     let buyer: Keypair
+    let sellerUsdcAccount: PublicKey
+    let buyerUsdcAccount: PublicKey
+    let platformUsdcAccount: PublicKey
 
     before(async () => {
       seller = Keypair.generate()
       buyer = Keypair.generate()
 
-      // Airdrop to both
+      // Airdrop SOL for transaction fees
       const sellerAirdrop = await provider.connection.requestAirdrop(
         seller.publicKey,
         2 * anchor.web3.LAMPORTS_PER_SOL
@@ -640,6 +779,77 @@ describe('Deal Discovery Platform', () => {
 
       await provider.connection.confirmTransaction(sellerAirdrop)
       await provider.connection.confirmTransaction(buyerAirdrop)
+
+      // Create USDC accounts for seller and buyer
+      sellerUsdcAccount = getAssociatedTokenAddressSync(
+        usdcMint.publicKey,
+        seller.publicKey
+      )
+      buyerUsdcAccount = getAssociatedTokenAddressSync(
+        usdcMint.publicKey,
+        buyer.publicKey
+      )
+
+      // Create platform USDC account (using admin as platform for test)
+      platformUsdcAccount = getAssociatedTokenAddressSync(
+        usdcMint.publicKey,
+        provider.wallet.publicKey
+      )
+
+      const createAccountsTx = new Transaction()
+        .add(
+          createAssociatedTokenAccountInstruction(
+            provider.wallet.publicKey,
+            sellerUsdcAccount,
+            seller.publicKey,
+            usdcMint.publicKey
+          )
+        )
+        .add(
+          createAssociatedTokenAccountInstruction(
+            provider.wallet.publicKey,
+            buyerUsdcAccount,
+            buyer.publicKey,
+            usdcMint.publicKey
+          )
+        )
+
+      // Only create platform account if it doesn't exist
+      const platformAccountInfo = await provider.connection.getAccountInfo(platformUsdcAccount)
+      if (!platformAccountInfo) {
+        createAccountsTx.add(
+          createAssociatedTokenAccountInstruction(
+            provider.wallet.publicKey,
+            platformUsdcAccount,
+            provider.wallet.publicKey,
+            usdcMint.publicKey
+          )
+        )
+      }
+
+      await provider.sendAndConfirm(createAccountsTx)
+
+      // Mint USDC to seller (needs USDC to pay for coupon) and buyer
+      const mintAmount = 1000 * 10 ** USDC_DECIMALS
+      const mintUsdcTx = new Transaction()
+        .add(
+          createMintToInstruction(
+            usdcMint.publicKey,
+            sellerUsdcAccount,
+            usdcMintAuthority.publicKey,
+            mintAmount
+          )
+        )
+        .add(
+          createMintToInstruction(
+            usdcMint.publicKey,
+            buyerUsdcAccount,
+            usdcMintAuthority.publicKey,
+            mintAmount
+          )
+        )
+
+      await provider.sendAndConfirm(mintUsdcTx, [usdcMintAuthority])
 
       // Mint a coupon for the seller
       dealAccount = await program.account.deal.fetch(dealPda)
@@ -676,6 +886,8 @@ describe('Deal Discovery Platform', () => {
           mint: mintKeypair.publicKey,
           tokenAccount: userTokenAccount,
           metadata: metadataPda,
+          userUsdcAccount: sellerUsdcAccount,
+          merchantUsdcAccount,
           merchant: merchant.publicKey,
           user: seller.publicKey,
           rent: SYSVAR_RENT_PUBKEY,
@@ -734,6 +946,28 @@ describe('Deal Discovery Platform', () => {
       )
       await provider.connection.confirmTransaction(airdrop)
 
+      // Create USDC account for anotherSeller
+      const anotherSellerUsdcAccount = getAssociatedTokenAddressSync(
+        usdcMint.publicKey,
+        anotherSeller.publicKey
+      )
+
+      const createAtaTx = new Transaction().add(
+        createAssociatedTokenAccountInstruction(
+          provider.wallet.publicKey,
+          anotherSellerUsdcAccount,
+          anotherSeller.publicKey,
+          usdcMint.publicKey
+        ),
+        createMintToInstruction(
+          usdcMint.publicKey,
+          anotherSellerUsdcAccount,
+          usdcMintAuthority.publicKey,
+          1000 * 10 ** USDC_DECIMALS
+        )
+      )
+      await provider.sendAndConfirm(createAtaTx, [usdcMintAuthority])
+
       // Mint another coupon
       dealAccount = await program.account.deal.fetch(dealPda)
       const mintKeypair = Keypair.generate()
@@ -769,6 +1003,8 @@ describe('Deal Discovery Platform', () => {
           mint: mintKeypair.publicKey,
           tokenAccount: userTokenAccount,
           metadata: metadataPda,
+          userUsdcAccount: anotherSellerUsdcAccount,
+          merchantUsdcAccount,
           merchant: merchant.publicKey,
           user: anotherSeller.publicKey,
           rent: SYSVAR_RENT_PUBKEY,
@@ -815,10 +1051,10 @@ describe('Deal Discovery Platform', () => {
     })
 
     it('Buys a listed coupon and creates Sale PDA', async () => {
-      const platformWallet = Keypair.generate().publicKey
-
-      const sellerBalanceBefore = await provider.connection.getBalance(seller.publicKey)
-      const buyerBalanceBefore = await provider.connection.getBalance(buyer.publicKey)
+      // Get USDC balances before
+      const sellerUsdcBefore = await provider.connection.getTokenAccountBalance(sellerUsdcAccount)
+      const buyerUsdcBefore = await provider.connection.getTokenAccountBalance(buyerUsdcAccount)
+      const platformUsdcBefore = await provider.connection.getTokenAccountBalance(platformUsdcAccount)
 
       const listing = await program.account.listing.fetch(listingPda)
 
@@ -843,10 +1079,14 @@ describe('Deal Discovery Platform', () => {
           listing: listingPda,
           coupon: listingCouponPda,
           sale: salePda,
+          buyerUsdcAccount,
+          sellerUsdcAccount,
+          platformUsdcAccount,
           seller: seller.publicKey,
           buyer: buyer.publicKey,
-          platformWallet: platformWallet,
+          platformWallet: provider.wallet.publicKey,
           systemProgram: SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
         })
         .signers([buyer])
         .rpc()
@@ -855,16 +1095,43 @@ describe('Deal Discovery Platform', () => {
       const boughtCoupon = await program.account.coupon.fetch(listingCouponPda)
       assert.equal(boughtCoupon.owner.toString(), buyer.publicKey.toString())
 
-      // Verify listing deactivated
-      const updatedListing = await program.account.listing.fetch(listingPda)
-      assert.isFalse(updatedListing.isActive)
+      // Verify listing closed (account no longer exists due to close = seller)
+      try {
+        await program.account.listing.fetch(listingPda)
+        assert.fail('Listing should be closed and not exist')
+      } catch (error) {
+        assert.include(error.message, 'Account does not exist')
+      }
 
-      // Verify payments (seller got 97.5%, platform got 2.5%)
-      const sellerBalanceAfter = await provider.connection.getBalance(seller.publicKey)
-      const platformFee = (listing.priceLamports.toNumber() * 25) / 1000
-      const sellerAmount = listing.priceLamports.toNumber() - platformFee
+      // Verify USDC payments (seller got 97.5%, platform got 2.5%)
+      const sellerUsdcAfter = await provider.connection.getTokenAccountBalance(sellerUsdcAccount)
+      const buyerUsdcAfter = await provider.connection.getTokenAccountBalance(buyerUsdcAccount)
+      const platformUsdcAfter = await provider.connection.getTokenAccountBalance(platformUsdcAccount)
 
-      assert.equal(sellerBalanceAfter - sellerBalanceBefore, sellerAmount)
+      const totalPrice = listing.priceLamports.toNumber()
+      const platformFee = (totalPrice * 25) / 1000
+      const sellerAmount = totalPrice - platformFee
+
+      // Buyer paid full price
+      assert.equal(
+        Number(buyerUsdcBefore.value.amount) - Number(buyerUsdcAfter.value.amount),
+        totalPrice,
+        'Buyer should have paid full price'
+      )
+
+      // Seller received 97.5%
+      assert.equal(
+        Number(sellerUsdcAfter.value.amount) - Number(sellerUsdcBefore.value.amount),
+        sellerAmount,
+        'Seller should have received 97.5%'
+      )
+
+      // Platform received 2.5%
+      assert.equal(
+        Number(platformUsdcAfter.value.amount) - Number(platformUsdcBefore.value.amount),
+        platformFee,
+        'Platform should have received 2.5% fee'
+      )
 
       // Verify Sale PDA was created with correct data
       const saleAccount = await program.account.sale.fetch(salePda)
@@ -896,16 +1163,25 @@ describe('Deal Discovery Platform', () => {
       )
 
       try {
+        const merchantUsdcAccount = getAssociatedTokenAddressSync(
+          usdcMint.publicKey,
+          merchant.publicKey
+        )
+
         await program.methods
           .buyCoupon()
           .accounts({
             listing: listingPda,  // This listing was closed, so account doesn't exist
             coupon: listingCouponPda,
             sale: salePda,
+            buyerUsdcAccount: merchantUsdcAccount,
+            sellerUsdcAccount,
+            platformUsdcAccount,
             seller: seller.publicKey,
             buyer: merchant.publicKey,
             platformWallet: Keypair.generate().publicKey,
             systemProgram: SystemProgram.programId,
+            tokenProgram: TOKEN_PROGRAM_ID,
           })
           .signers([merchant])
           .rpc()
@@ -914,7 +1190,7 @@ describe('Deal Discovery Platform', () => {
       } catch (error) {
         // With close constraint, listing account is closed, so we get AccountNotInitialized
         assert.isTrue(
-          error.message.includes('AccountNotInitialized') || error.message.includes('ListingInactive'),
+          error.message.includes('AccountNotInitialized') || error.message.includes('ListingInactive') || error.message.includes('Account does not exist'),
           'Should fail when trying to buy closed listing'
         )
       }
@@ -968,6 +1244,28 @@ describe('Deal Discovery Platform', () => {
       )
       await provider.connection.confirmTransaction(airdrop)
 
+      // Create USDC account for anotherSeller
+      const anotherSellerUsdcAccount = getAssociatedTokenAddressSync(
+        usdcMint.publicKey,
+        anotherSeller.publicKey
+      )
+
+      const createAtaTx = new Transaction().add(
+        createAssociatedTokenAccountInstruction(
+          provider.wallet.publicKey,
+          anotherSellerUsdcAccount,
+          anotherSeller.publicKey,
+          usdcMint.publicKey
+        ),
+        createMintToInstruction(
+          usdcMint.publicKey,
+          anotherSellerUsdcAccount,
+          usdcMintAuthority.publicKey,
+          1000 * 10 ** USDC_DECIMALS
+        )
+      )
+      await provider.sendAndConfirm(createAtaTx, [usdcMintAuthority])
+
       // Mint coupon
       dealAccount = await program.account.deal.fetch(dealPda)
       const mintKeypair = Keypair.generate()
@@ -1003,6 +1301,8 @@ describe('Deal Discovery Platform', () => {
           mint: mintKeypair.publicKey,
           tokenAccount: userTokenAccount,
           metadata: metadataPda,
+          userUsdcAccount: anotherSellerUsdcAccount,
+          merchantUsdcAccount,
           merchant: merchant.publicKey,
           user: anotherSeller.publicKey,
           rent: SYSVAR_RENT_PUBKEY,
@@ -1064,12 +1364,118 @@ describe('Deal Discovery Platform', () => {
     })
 
     it('Prevents non-owner from delisting', async () => {
+      // First, create a fresh listing since the original listingPda was closed in the buy test
+      const freshSeller = Keypair.generate()
+      const airdrop = await provider.connection.requestAirdrop(
+        freshSeller.publicKey,
+        2 * anchor.web3.LAMPORTS_PER_SOL
+      )
+      await provider.connection.confirmTransaction(airdrop)
+
+      // Create USDC account for freshSeller
+      const freshSellerUsdcAccount = getAssociatedTokenAddressSync(
+        usdcMint.publicKey,
+        freshSeller.publicKey
+      )
+
+      const createAtaTx = new Transaction().add(
+        createAssociatedTokenAccountInstruction(
+          provider.wallet.publicKey,
+          freshSellerUsdcAccount,
+          freshSeller.publicKey,
+          usdcMint.publicKey
+        ),
+        createMintToInstruction(
+          usdcMint.publicKey,
+          freshSellerUsdcAccount,
+          usdcMintAuthority.publicKey,
+          1000 * 10 ** USDC_DECIMALS
+        )
+      )
+      await provider.sendAndConfirm(createAtaTx, [usdcMintAuthority])
+
+      // Mint a fresh coupon
+      dealAccount = await program.account.deal.fetch(dealPda)
+      const freshMintKeypair = Keypair.generate()
+
+      const freshCouponPda = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from('coupon'),
+          dealPda.toBuffer(),
+          dealAccount.currentSupply.toArrayLike(Buffer, 'le', 8),
+        ],
+        program.programId
+      )[0]
+
+      const freshUserTokenAccount = getAssociatedTokenAddressSync(
+        freshMintKeypair.publicKey,
+        freshSeller.publicKey
+      )
+
+      const [freshMetadataPda] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from('metadata'),
+          new PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s').toBuffer(),
+          freshMintKeypair.publicKey.toBuffer(),
+        ],
+        new PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s')
+      )
+
+      await program.methods
+        .mintCoupon(dealPda, 'ipfs://test-metadata-fresh')
+        .accounts({
+          deal: dealPda,
+          coupon: freshCouponPda,
+          mint: freshMintKeypair.publicKey,
+          tokenAccount: freshUserTokenAccount,
+          metadata: freshMetadataPda,
+          userUsdcAccount: freshSellerUsdcAccount,
+          merchantUsdcAccount,
+          merchant: merchant.publicKey,
+          user: freshSeller.publicKey,
+          rent: SYSVAR_RENT_PUBKEY,
+          systemProgram: SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+          tokenMetadataProgram: new PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s'),
+        })
+        .signers([freshSeller, freshMintKeypair])
+        .rpc()
+
+      // Create fresh listing
+      const freshCouponData = await program.account.coupon.fetch(freshCouponPda)
+      const freshListingCountBuffer = Buffer.alloc(4)
+      freshListingCountBuffer.writeUInt32LE(freshCouponData.listingCount)
+
+      const freshListingPda = PublicKey.findProgramAddressSync(
+        [Buffer.from('listing'), freshCouponPda.toBuffer(), freshListingCountBuffer],
+        program.programId
+      )[0]
+
+      const [freshStakedCouponPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from('staked_coupon'), freshCouponPda.toBuffer()],
+        program.programId
+      )
+
+      await program.methods
+        .listCoupon(new BN(30_000_000))
+        .accounts({
+          coupon: freshCouponPda,
+          listing: freshListingPda,
+          seller: freshSeller.publicKey,
+          systemProgram: SystemProgram.programId,
+          stakedCoupon: freshStakedCouponPda,
+        })
+        .signers([freshSeller])
+        .rpc()
+
+      // Now try to delist with wrong owner (merchant instead of freshSeller)
       try {
         await program.methods
           .delistCoupon()
           .accounts({
-            listing: listingPda,
-            coupon: listingCouponPda,
+            listing: freshListingPda,
+            coupon: freshCouponPda,
             seller: merchant.publicKey,
           })
           .signers([merchant])
@@ -1077,7 +1483,10 @@ describe('Deal Discovery Platform', () => {
 
         assert.fail('Should have thrown error')
       } catch (error) {
-        assert.include(error.message, 'NotOwner')
+        assert.isTrue(
+          error.message.includes('NotOwner') || error.message.includes('ConstraintRaw'),
+          'Should fail with NotOwner or ConstraintRaw error'
+        )
       }
     })
 
@@ -1096,6 +1505,66 @@ describe('Deal Discovery Platform', () => {
         provider.connection.requestAirdrop(secondBuyer.publicKey, 5 * anchor.web3.LAMPORTS_PER_SOL),
       ])
       await new Promise((resolve) => setTimeout(resolve, 1000))
+
+      // Create USDC accounts for all participants
+      const originalSellerUsdcAccount = getAssociatedTokenAddressSync(
+        usdcMint.publicKey,
+        originalSeller.publicKey
+      )
+      const firstBuyerUsdcAccount = getAssociatedTokenAddressSync(
+        usdcMint.publicKey,
+        firstBuyer.publicKey
+      )
+      const secondBuyerUsdcAccount = getAssociatedTokenAddressSync(
+        usdcMint.publicKey,
+        secondBuyer.publicKey
+      )
+
+      const createUsdcAccountsTx = new Transaction()
+        .add(
+          createAssociatedTokenAccountInstruction(
+            provider.wallet.publicKey,
+            originalSellerUsdcAccount,
+            originalSeller.publicKey,
+            usdcMint.publicKey
+          ),
+          createMintToInstruction(
+            usdcMint.publicKey,
+            originalSellerUsdcAccount,
+            usdcMintAuthority.publicKey,
+            1000 * 10 ** USDC_DECIMALS
+          )
+        )
+        .add(
+          createAssociatedTokenAccountInstruction(
+            provider.wallet.publicKey,
+            firstBuyerUsdcAccount,
+            firstBuyer.publicKey,
+            usdcMint.publicKey
+          ),
+          createMintToInstruction(
+            usdcMint.publicKey,
+            firstBuyerUsdcAccount,
+            usdcMintAuthority.publicKey,
+            1000 * 10 ** USDC_DECIMALS
+          )
+        )
+        .add(
+          createAssociatedTokenAccountInstruction(
+            provider.wallet.publicKey,
+            secondBuyerUsdcAccount,
+            secondBuyer.publicKey,
+            usdcMint.publicKey
+          ),
+          createMintToInstruction(
+            usdcMint.publicKey,
+            secondBuyerUsdcAccount,
+            usdcMintAuthority.publicKey,
+            1000 * 10 ** USDC_DECIMALS
+          )
+        )
+
+      await provider.sendAndConfirm(createUsdcAccountsTx, [usdcMintAuthority])
 
       // Step 1: Mint a new coupon
       console.log('1️⃣  Minting coupon...')
@@ -1133,6 +1602,8 @@ describe('Deal Discovery Platform', () => {
           mint: mintKeypair.publicKey,
           tokenAccount: userTokenAccount,
           metadata: metadataPda,
+          userUsdcAccount: originalSellerUsdcAccount,
+          merchantUsdcAccount,
           merchant: merchant.publicKey,
           user: originalSeller.publicKey,
           rent: SYSVAR_RENT_PUBKEY,
@@ -1196,10 +1667,14 @@ describe('Deal Discovery Platform', () => {
           listing: listing0Pda,
           coupon: couponPda,
           sale: sale0Pda,
+          buyerUsdcAccount: firstBuyerUsdcAccount,
+          sellerUsdcAccount: originalSellerUsdcAccount,
+          platformUsdcAccount,
           seller: originalSeller.publicKey,
           buyer: firstBuyer.publicKey,
           platformWallet: merchant.publicKey,
           systemProgram: SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
         })
         .signers([firstBuyer])
         .rpc()
@@ -1260,10 +1735,14 @@ describe('Deal Discovery Platform', () => {
           listing: listing1Pda,
           coupon: couponPda,
           sale: sale1Pda,
+          buyerUsdcAccount: secondBuyerUsdcAccount,
+          sellerUsdcAccount: firstBuyerUsdcAccount,
+          platformUsdcAccount,
           seller: firstBuyer.publicKey,
           buyer: secondBuyer.publicKey,
           platformWallet: merchant.publicKey,
           systemProgram: SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
         })
         .signers([secondBuyer])
         .rpc()

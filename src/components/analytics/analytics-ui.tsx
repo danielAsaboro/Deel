@@ -10,10 +10,10 @@ import { useUsdcPrice } from '@/hooks/use-usdc-price'
 import { BN } from '@coral-xyz/anchor'
 
 export function AnalyticsDashboard({ analytics }: { analytics: MerchantAnalytics }) {
-  const { lamportsToUsdc } = useUsdcPrice()
+  const { baseUnitsToUsdc } = useUsdcPrice()
 
   const formatUSDC = (lamports: number) => {
-    return lamportsToUsdc(lamports).toFixed(2)
+    return baseUnitsToUsdc(lamports).toFixed(2)
   }
 
   // Prepare chart data

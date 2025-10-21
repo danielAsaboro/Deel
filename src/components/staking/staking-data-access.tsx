@@ -12,6 +12,14 @@ import { useGateway } from '../gateway/gateway-data-access'
 import { buildGatewayTransaction, sendGatewayTransaction, gatewayTransactionTracker } from '@/lib/gateway'
 import { toast } from 'sonner'
 import { BN } from '@coral-xyz/anchor'
+import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from '@solana/spl-token'
+
+// USDC mint address (configurable via environment variable)
+// Devnet/Localnet: HJbM6NHDTHuhqPMNznyrseLKzuh7w1FQe2qGUFKV5iRp
+// Mainnet: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+const USDC_MINT = new PublicKey(
+  process.env.NEXT_PUBLIC_USDC_MINT || 'HJbM6NHDTHuhqPMNznyrseLKzuh7w1FQe2qGUFKV5iRp'
+)
 
 export interface RewardsPool {
   publicKey: PublicKey
@@ -260,6 +268,18 @@ export function useStakingProgram() {
         program.programId
       )
 
+      // Derive USDC token accounts for reward payment
+      const rewardsPoolUsdcAccount = getAssociatedTokenAddressSync(
+        USDC_MINT,
+        poolPda,
+        true // allowOwnerOffCurve - PDA can own token accounts
+      )
+
+      const stakerUsdcAccount = getAssociatedTokenAddressSync(
+        USDC_MINT,
+        publicKey
+      )
+
       let signature: string
 
       // Check if Gateway is enabled and configured
@@ -281,8 +301,11 @@ export function useStakingProgram() {
               stakedCoupon: stakedCouponPubkey,
               coupon: couponPubkey,
               rewardsPool: poolPda,
+              rewardsPoolUsdcAccount,
+              stakerUsdcAccount,
               staker: publicKey,
               systemProgram: SystemProgram.programId,
+              tokenProgram: TOKEN_PROGRAM_ID,
             } as any)
             .transaction()
 
@@ -339,8 +362,11 @@ export function useStakingProgram() {
             stakedCoupon: stakedCouponPubkey,
             coupon: couponPubkey,
             rewardsPool: poolPda,
+            rewardsPoolUsdcAccount,
+            stakerUsdcAccount,
             staker: publicKey,
             systemProgram: SystemProgram.programId,
+            tokenProgram: TOKEN_PROGRAM_ID,
           } as any)
           .rpc()
       }
@@ -368,6 +394,18 @@ export function useStakingProgram() {
         program.programId
       )
 
+      // Derive USDC token accounts for reward payment
+      const rewardsPoolUsdcAccount = getAssociatedTokenAddressSync(
+        USDC_MINT,
+        poolPda,
+        true // allowOwnerOffCurve - PDA can own token accounts
+      )
+
+      const stakerUsdcAccount = getAssociatedTokenAddressSync(
+        USDC_MINT,
+        publicKey
+      )
+
       let signature: string
 
       // Check if Gateway is enabled and configured
@@ -388,8 +426,11 @@ export function useStakingProgram() {
             .accounts({
               stakedCoupon: stakedCouponPubkey,
               rewardsPool: poolPda,
+              rewardsPoolUsdcAccount,
+              stakerUsdcAccount,
               staker: publicKey,
               systemProgram: SystemProgram.programId,
+              tokenProgram: TOKEN_PROGRAM_ID,
             } as any)
             .transaction()
 
@@ -445,8 +486,11 @@ export function useStakingProgram() {
           .accounts({
             stakedCoupon: stakedCouponPubkey,
             rewardsPool: poolPda,
+            rewardsPoolUsdcAccount,
+            stakerUsdcAccount,
             staker: publicKey,
             systemProgram: SystemProgram.programId,
+            tokenProgram: TOKEN_PROGRAM_ID,
           } as any)
           .rpc()
       }

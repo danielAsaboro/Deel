@@ -36,8 +36,10 @@ describe('Listing Counter Tests', () => {
   })
 
   it('Creates a test deal', async () => {
+    const dealTitle = 'Test Deal'
+
     const [pda] = PublicKey.findProgramAddressSync(
-      [Buffer.from('deal'), merchant.publicKey.toBuffer()],
+      [Buffer.from('deal'), merchant.publicKey.toBuffer(), Buffer.from(dealTitle)],
       program.programId
     )
     dealPda = pda
@@ -46,7 +48,7 @@ describe('Listing Counter Tests', () => {
 
     await program.methods
       .createDeal(
-        'Test Deal',
+        dealTitle,
         'Test Description',
         50,
         new BN(100),
@@ -76,9 +78,13 @@ describe('Listing Counter Tests', () => {
     // Initialize coupon account size
     const couponSpace = 8 + 32 + 32 + 32 + 1 + 8 + 9 + 4 + 4 + 1
 
+    // Request airdrop and wait for confirmation
+    const airdropSig = await provider.connection.requestAirdrop(merchant.publicKey, 0)
+    await provider.connection.confirmTransaction(airdropSig, 'confirmed')
+
     const tx = await provider.connection.getTransaction(
-      await provider.connection.requestAirdrop(merchant.publicKey, 0),
-      { maxSupportedTransactionVersion: 0 }
+      airdropSig,
+      { maxSupportedTransactionVersion: 0, commitment: 'confirmed' }
     )
 
     // Create account instruction

@@ -16,7 +16,7 @@ const links: { label: string; path: string }[] = [
   { label: 'Marketplace', path: '/marketplace' },
   { label: 'Staking', path: '/staking' },
   { label: 'Analytics', path: '/analytics' },
-  { label: 'Gateway', path: '/gateway' },
+  { label: 'Faucet', path: '/faucet' },
   { label: 'Account', path: '/account' },
 ]
 

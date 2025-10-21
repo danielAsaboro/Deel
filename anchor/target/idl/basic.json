@@ -124,6 +124,18 @@
           }
         },
         {
+          "name": "buyer_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "seller_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "platform_usdc_account",
+          "writable": true
+        },
+        {
           "name": "seller",
           "writable": true
         },
@@ -133,12 +145,42 @@
           "signer": true
         },
         {
-          "name": "platform_wallet",
-          "writable": true
+          "name": "platform_wallet"
         },
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claim_group_deal_coupon",
+      "discriminator": [
+        18,
+        111,
+        27,
+        41,
+        20,
+        47,
+        25,
+        197
+      ],
+      "accounts": [
+        {
+          "name": "group_deal"
+        },
+        {
+          "name": "participant",
+          "writable": true
+        },
+        {
+          "name": "user",
+          "signer": true
         }
       ],
       "args": []
@@ -162,6 +204,35 @@
         },
         {
           "name": "rewards_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  119,
+                  97,
+                  114,
+                  100,
+                  115,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rewards_pool_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "staker_usdc_account",
           "writable": true
         },
         {
@@ -172,6 +243,10 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         }
       ],
       "args": []
@@ -248,6 +323,102 @@
         {
           "name": "category",
           "type": "string"
+        },
+        {
+          "name": "price_lamports",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "create_group_deal",
+      "discriminator": [
+        224,
+        6,
+        90,
+        198,
+        152,
+        131,
+        64,
+        180
+      ],
+      "accounts": [
+        {
+          "name": "deal"
+        },
+        {
+          "name": "group_deal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  114,
+                  111,
+                  117,
+                  112,
+                  95,
+                  100,
+                  101,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "deal"
+              },
+              {
+                "kind": "account",
+                "path": "creator"
+              }
+            ]
+          }
+        },
+        {
+          "name": "creator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "target_participants",
+          "type": "u32"
+        },
+        {
+          "name": "tier1_threshold",
+          "type": "u32"
+        },
+        {
+          "name": "tier1_discount",
+          "type": "u8"
+        },
+        {
+          "name": "tier2_threshold",
+          "type": "u32"
+        },
+        {
+          "name": "tier2_discount",
+          "type": "u8"
+        },
+        {
+          "name": "tier3_threshold",
+          "type": "u32"
+        },
+        {
+          "name": "tier3_discount",
+          "type": "u8"
+        },
+        {
+          "name": "expiry_timestamp",
+          "type": "i64"
         },
         {
           "name": "price_lamports",
@@ -339,7 +510,137 @@
       ]
     },
     {
+      "name": "initialize_user_profile",
+      "discriminator": [
+        192,
+        144,
+        204,
+        140,
+        113,
+        25,
+        59,
+        102
+      ],
+      "accounts": [
+        {
+          "name": "user_profile",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114,
+                  95,
+                  112,
+                  114,
+                  111,
+                  102,
+                  105,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "join_group_deal",
+      "discriminator": [
+        37,
+        179,
+        229,
+        69,
+        250,
+        197,
+        155,
+        17
+      ],
+      "accounts": [
+        {
+          "name": "group_deal",
+          "writable": true
+        },
+        {
+          "name": "participant",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  114,
+                  111,
+                  117,
+                  112,
+                  95,
+                  112,
+                  97,
+                  114,
+                  116,
+                  105,
+                  99,
+                  105,
+                  112,
+                  97,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "group_deal"
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "list_coupon",
+      "docs": [
+        "List coupon for sale on secondary marketplace",
+        "",
+        "DESIGN NOTE: Uses listing_count to prevent PDA collisions.",
+        "Scenario: User lists coupon → delists → lists again",
+        "Without counter: Same PDA seeds = account already exists = error",
+        "With counter: Each listing gets unique PDA (listing #0, #1, #2, etc.)",
+        "The counter persists even after sale, allowing unlimited re-listings."
+      ],
       "discriminator": [
         136,
         133,
@@ -575,8 +876,15 @@
           "writable": true
         },
         {
-          "name": "merchant",
+          "name": "user_usdc_account",
           "writable": true
+        },
+        {
+          "name": "merchant_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "merchant"
         },
         {
           "name": "user",
@@ -606,11 +914,164 @@
       ],
       "args": [
         {
-          "name": "deal_id",
+          "name": "_deal_id",
           "type": "pubkey"
         },
         {
           "name": "metadata_uri",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "mint_loyalty_badge",
+      "discriminator": [
+        168,
+        96,
+        227,
+        110,
+        93,
+        28,
+        31,
+        64
+      ],
+      "accounts": [
+        {
+          "name": "loyalty_badge",
+          "writable": true
+        },
+        {
+          "name": "user_profile",
+          "writable": true
+        },
+        {
+          "name": "badge_mint",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "badge_token_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "badge_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        }
+      ],
+      "args": [
+        {
+          "name": "badge_type",
+          "type": "u8"
+        },
+        {
+          "name": "title",
+          "type": "string"
+        },
+        {
+          "name": "description",
           "type": "string"
         }
       ]
@@ -796,6 +1257,16 @@
     },
     {
       "name": "transfer_coupon",
+      "docs": [
+        "Transfer coupon ownership",
+        "",
+        "DESIGN NOTE: This updates the logical owner in the Coupon account.",
+        "The actual NFT (SPL token) transfer happens separately via token::transfer",
+        "in the frontend. This separation allows:",
+        "- On-chain business logic (redemption, listing) to check Coupon.owner",
+        "- NFTs to remain in user wallets (visible in explorers/wallets)",
+        "- Marketplace to transfer both token AND coupon ownership atomically"
+      ],
       "discriminator": [
         144,
         38,
@@ -872,6 +1343,35 @@
         },
         {
           "name": "rewards_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  119,
+                  97,
+                  114,
+                  100,
+                  115,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rewards_pool_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "staker_usdc_account",
           "writable": true
         },
         {
@@ -882,6 +1382,10 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         }
       ],
       "args": []
@@ -981,6 +1485,32 @@
       ]
     },
     {
+      "name": "GroupDeal",
+      "discriminator": [
+        251,
+        18,
+        233,
+        197,
+        54,
+        139,
+        183,
+        133
+      ]
+    },
+    {
+      "name": "GroupParticipant",
+      "discriminator": [
+        219,
+        23,
+        9,
+        69,
+        193,
+        219,
+        76,
+        73
+      ]
+    },
+    {
       "name": "Listing",
       "discriminator": [
         218,
@@ -991,6 +1521,19 @@
         134,
         26,
         58
+      ]
+    },
+    {
+      "name": "LoyaltyBadge",
+      "discriminator": [
+        32,
+        174,
+        41,
+        70,
+        176,
+        158,
+        68,
+        69
       ]
     },
     {
@@ -1030,6 +1573,19 @@
         93,
         121,
         98
+      ]
+    },
+    {
+      "name": "UserProfile",
+      "discriminator": [
+        32,
+        37,
+        119,
+        205,
+        179,
+        180,
+        13,
+        194
       ]
     }
   ],
@@ -1113,6 +1669,26 @@
       "code": 6015,
       "name": "CouponStaked",
       "msg": "Coupon is currently staked and cannot be redeemed, transferred, or listed"
+    },
+    {
+      "code": 6016,
+      "name": "InvalidPaymentToken",
+      "msg": "Invalid payment token - must use platform USDC"
+    },
+    {
+      "code": 6017,
+      "name": "InvalidBadgeType",
+      "msg": "Invalid badge type (must be 1-4)"
+    },
+    {
+      "code": 6018,
+      "name": "InvalidGroupThreshold",
+      "msg": "Invalid group threshold configuration"
+    },
+    {
+      "code": 6019,
+      "name": "GroupThresholdNotMet",
+      "msg": "Group deal threshold not yet met"
     }
   ],
   "types": [
@@ -1279,6 +1855,104 @@
       }
     },
     {
+      "name": "GroupDeal",
+      "docs": [
+        "Group Deal - collaborative buying with tiered discounts"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "deal",
+            "type": "pubkey"
+          },
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "target_participants",
+            "type": "u32"
+          },
+          {
+            "name": "current_participants",
+            "type": "u32"
+          },
+          {
+            "name": "tier1_discount",
+            "type": "u8"
+          },
+          {
+            "name": "tier2_discount",
+            "type": "u8"
+          },
+          {
+            "name": "tier3_discount",
+            "type": "u8"
+          },
+          {
+            "name": "tier1_threshold",
+            "type": "u32"
+          },
+          {
+            "name": "tier2_threshold",
+            "type": "u32"
+          },
+          {
+            "name": "tier3_threshold",
+            "type": "u32"
+          },
+          {
+            "name": "expiry_timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "is_active",
+            "type": "bool"
+          },
+          {
+            "name": "price_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GroupParticipant",
+      "docs": [
+        "Group Deal Participant"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "group_deal",
+            "type": "pubkey"
+          },
+          {
+            "name": "participant",
+            "type": "pubkey"
+          },
+          {
+            "name": "joined_at",
+            "type": "i64"
+          },
+          {
+            "name": "has_claimed",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
       "name": "Listing",
       "type": {
         "kind": "struct",
@@ -1306,6 +1980,45 @@
           {
             "name": "listing_number",
             "type": "u32"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LoyaltyBadge",
+      "docs": [
+        "Loyalty Badge - NFT achievement for user milestones"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "badge_type",
+            "type": "u8"
+          },
+          {
+            "name": "earned_at",
+            "type": "i64"
+          },
+          {
+            "name": "title",
+            "type": "string"
+          },
+          {
+            "name": "description",
+            "type": "string"
           },
           {
             "name": "bump",
@@ -1405,6 +2118,67 @@
           }
         ]
       }
+    },
+    {
+      "name": "UserProfile",
+      "docs": [
+        "User Profile - tracks user activity and achievements"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "deals_claimed",
+            "type": "u64"
+          },
+          {
+            "name": "total_spent_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "badges_earned",
+            "type": "u32"
+          },
+          {
+            "name": "first_deal_timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "last_activity_timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "total_savings_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "referrals_made",
+            "type": "u32"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ],
+  "constants": [
+    {
+      "name": "MOCK_USDC_MINT",
+      "docs": [
+        "Mock USDC mint address for devnet/localnet testing",
+        "6 decimals (matches real USDC on mainnet)",
+        "",
+        "For PRODUCTION/MAINNET: Replace with real USDC mint address:",
+        "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+      ],
+      "type": "pubkey",
+      "value": "HJbM6NHDTHuhqPMNznyrseLKzuh7w1FQe2qGUFKV5iRp"
     }
   ]
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import { PublicKey } from '@solana/web3.js'
-import { useState } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useDealsProgram, Deal, useExternalDeals } from './deals-data-access'
 import { Button } from '../ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../ui/card'
@@ -10,15 +10,17 @@ import { Label } from '../ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { Badge } from '../ui/badge'
-import { Calendar, Tag, TrendingDown, Package, ExternalLink, Globe, Star, MessageCircle, Share2 } from 'lucide-react'
+import { Calendar, Tag, TrendingDown, Package, ExternalLink, Globe, Star, MessageCircle, Share2, Search, MapPin, SlidersHorizontal, TrendingUp, Clock, DollarSign, Users } from 'lucide-react'
 import { ExternalDeal } from '@/types/external-deals'
 import { Textarea } from '../ui/textarea'
 import { toast } from 'sonner'
 import { useUsdcPrice } from '@/hooks/use-usdc-price'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
+import Link from 'next/link'
 
 export function DealsCreate() {
   const { createDeal } = useDealsProgram()
-  const { usdcToLamports } = useUsdcPrice()
+  const { usdcToBaseUnits } = useUsdcPrice()
   const [isOpen, setIsOpen] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -30,7 +32,7 @@ export function DealsCreate() {
 
   const handleSubmit = () => {
     const expiryTimestamp = Math.floor(Date.now() / 1000) + expiryDays * 24 * 60 * 60
-    const priceLamports = usdcToLamports(priceUsdc)
+    const priceLamports = usdcToBaseUnits(priceUsdc)
     createDeal.mutateAsync({
       title,
       description,
@@ -162,7 +164,7 @@ function StarRating({ value, onChange, readonly = false }: { value: number; onCh
 
 export function DealCard({ deal }: { deal: Deal }) {
   const { mintCoupon, updateDeal, rateDeal, addComment, useCommentsByDeal } = useDealsProgram()
-  const { lamportsToUsdc } = useUsdcPrice()
+  const { baseUnitsToUsdc } = useUsdcPrice()
   const { publicKey } = useWallet()
   const isMerchant = publicKey && deal.merchant.equals(publicKey)
   const [showComments, setShowComments] = useState(false)
@@ -262,6 +264,13 @@ export function DealCard({ deal }: { deal: Deal }) {
           </div>
         </div>
 
+        {/* Social Proof */}
+        {deal.currentSupply.toNumber() > 0 && (
+          <div className="bg-muted px-3 py-2 rounded-md text-sm">
+            <span className="font-medium text-primary">{deal.currentSupply.toNumber()} {deal.currentSupply.toNumber() === 1 ? 'person has' : 'people have'}</span> claimed this deal! 🔥
+          </div>
+        )}
+
         <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
           <div
             className="h-full bg-primary transition-all"
@@ -271,7 +280,7 @@ export function DealCard({ deal }: { deal: Deal }) {
 
         <div className="flex items-center justify-between">
           <div className="text-sm font-medium">
-            Price: ${lamportsToUsdc(deal.priceLamports.toNumber()).toFixed(2)} USDC
+            Price: ${baseUnitsToUsdc(deal.priceLamports.toNumber()).toFixed(2)} USDC
           </div>
           <div className="flex gap-2">
             <Button size="sm" variant="ghost" onClick={() => setShowComments(!showComments)}>
@@ -356,7 +365,7 @@ export function DealCard({ deal }: { deal: Deal }) {
 // External Deal Card Component
 export function ExternalDealCard({ deal }: { deal: ExternalDeal }) {
   const { createDeal } = useDealsProgram()
-  const { usdcToLamports } = useUsdcPrice()
+  const { usdcToBaseUnits } = useUsdcPrice()
   const { publicKey } = useWallet()
   const [showImportDialog, setShowImportDialog] = useState(false)
   const [maxSupply, setMaxSupply] = useState(100)
@@ -365,7 +374,7 @@ export function ExternalDealCard({ deal }: { deal: ExternalDeal }) {
 
   const handleImport = async () => {
     const expiryTimestamp = Math.floor(Date.now() / 1000) + expiryDays * 24 * 60 * 60
-    const priceLamports = usdcToLamports(priceUsdc)
+    const priceLamports = usdcToBaseUnits(priceUsdc)
     await createDeal.mutateAsync({
       title: deal.title,
       description: deal.description,
@@ -514,109 +523,457 @@ export function ExternalDealCard({ deal }: { deal: ExternalDeal }) {
   )
 }
 
+// Geolocation hook
+function useGeolocation() {
+  const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const requestLocation = () => {
+    setLoading(true)
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setLocation({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          })
+          setLoading(false)
+          toast.success('Location enabled', { description: 'Showing deals near you' })
+        },
+        (err) => {
+          setError(err.message)
+          setLoading(false)
+          toast.error('Could not get your location', { description: 'Please enable location access' })
+        }
+      )
+    } else {
+      setError('Geolocation not supported')
+      setLoading(false)
+      toast.error('Geolocation not supported by your browser')
+    }
+  }
+
+  return { location, error, loading, requestLocation }
+}
+
+// Calculate distance between two coordinates (Haversine formula)
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371 // Earth's radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180
+  const dLon = ((lon2 - lon1) * Math.PI) / 180
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return R * c
+}
+
 export function DealsList() {
   const { deals } = useDealsProgram()
+  const { baseUnitsToUsdc } = useUsdcPrice()
   const [filter, setFilter] = useState<'all' | 'active' | 'expired'>('active')
   const [category, setCategory] = useState<'all' | 'flights' | 'hotels' | 'shopping' | 'restaurants'>('all')
   const [showExternal, setShowExternal] = useState(true)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [sortBy, setSortBy] = useState<'newest' | 'price-low' | 'price-high' | 'discount' | 'expiry' | 'popularity'>('newest')
+  const [minPrice, setMinPrice] = useState('')
+  const [maxPrice, setMaxPrice] = useState('')
+  const [nearbyRadius, setNearbyRadius] = useState<number>(25) // km
+  const [showFilters, setShowFilters] = useState(false)
+  
+  const { location, loading: locationLoading, requestLocation } = useGeolocation()
 
   const externalDeals = useExternalDeals(category === 'all' ? undefined : category)
 
-  const filteredDeals = deals.data?.filter((deal) => {
-    if (filter === 'active') {
-      const isExpired = deal.expiryTimestamp.toNumber() * 1000 < Date.now()
-      return deal.isActive && !isExpired
+  // Combined and filtered deals
+  const filteredAndSortedDeals = useMemo(() => {
+    let result = deals.data?.filter((deal) => {
+      // Filter by status
+      if (filter === 'active') {
+        const isExpired = deal.expiryTimestamp.toNumber() * 1000 < Date.now()
+        if (!deal.isActive || isExpired) return false
+      }
+      if (filter === 'expired') {
+        if (deal.expiryTimestamp.toNumber() * 1000 >= Date.now()) return false
+      }
+
+      // Filter by search query
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase()
+        const matchesTitle = deal.title.toLowerCase().includes(query)
+        const matchesDescription = deal.description.toLowerCase().includes(query)
+        const matchesCategory = deal.category.toLowerCase().includes(query)
+        if (!matchesTitle && !matchesDescription && !matchesCategory) return false
+      }
+
+      // Filter by category
+      if (category !== 'all' && !deal.category.toLowerCase().includes(category.toLowerCase())) {
+        return false
+      }
+
+      // Filter by price range
+      const priceUsdc = baseUnitsToUsdc(deal.priceLamports.toNumber())
+      if (minPrice && priceUsdc < parseFloat(minPrice)) return false
+      if (maxPrice && priceUsdc > parseFloat(maxPrice)) return false
+
+      return true
+    }) || []
+
+    // Sort deals
+    result = [...result].sort((a, b) => {
+      switch (sortBy) {
+        case 'price-low':
+          return a.priceLamports.toNumber() - b.priceLamports.toNumber()
+        case 'price-high':
+          return b.priceLamports.toNumber() - a.priceLamports.toNumber()
+        case 'discount':
+          return b.discountPercent - a.discountPercent
+        case 'expiry':
+          return a.expiryTimestamp.toNumber() - b.expiryTimestamp.toNumber()
+        case 'popularity':
+          return b.currentSupply.toNumber() - a.currentSupply.toNumber()
+        case 'newest':
+        default:
+          return 0 // Keep original order (newest first from blockchain)
+      }
+    })
+
+    return result
+  }, [deals.data, filter, category, searchQuery, sortBy, minPrice, maxPrice, baseUnitsToUsdc])
+
+  // Filter external deals by location
+  const filteredExternalDeals = useMemo(() => {
+    if (!externalDeals.data) return []
+    
+    let filtered = externalDeals.data.deals
+
+    // Apply search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter(deal => 
+        deal.title.toLowerCase().includes(query) ||
+        deal.description.toLowerCase().includes(query) ||
+        deal.category.toLowerCase().includes(query)
+      )
     }
-    if (filter === 'expired') {
-      return deal.expiryTimestamp.toNumber() * 1000 < Date.now()
+
+    // Apply location filter
+    if (location) {
+      filtered = filtered.filter(deal => {
+        if (!deal.location?.latitude || !deal.location?.longitude) return false
+        const distance = calculateDistance(
+          location.latitude,
+          location.longitude,
+          deal.location.latitude,
+          deal.location.longitude
+        )
+        return distance <= nearbyRadius
+      }).map(deal => {
+        const distance = calculateDistance(
+          location.latitude,
+          location.longitude,
+          deal.location!.latitude,
+          deal.location!.longitude
+        )
+        return { ...deal, distance }
+      }).sort((a, b) => (a.distance || 0) - (b.distance || 0))
     }
-    return true
-  })
+
+    return filtered
+  }, [externalDeals.data, searchQuery, location, nearbyRadius])
+
+  // Get trending deals (sorted by claims)
+  const trendingDeals = useMemo(() => {
+    if (!deals.data) return []
+    return [...deals.data]
+      .filter(deal => deal.isActive && deal.expiryTimestamp.toNumber() * 1000 > Date.now())
+      .sort((a, b) => b.currentSupply.toNumber() - a.currentSupply.toNumber())
+      .slice(0, 6)
+  }, [deals.data])
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <div className="flex gap-2">
-            <Button
-              variant={filter === 'all' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setFilter('all')}
-            >
-              All
-            </Button>
-            <Button
-              variant={filter === 'active' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setFilter('active')}
-            >
-              Active
-            </Button>
-            <Button
-              variant={filter === 'expired' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setFilter('expired')}
-            >
-              Expired
-            </Button>
-          </div>
-          <Button
-            variant={showExternal ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setShowExternal(!showExternal)}
-          >
-            <Globe className="h-4 w-4 mr-2" />
-            External Deals
-          </Button>
-        </div>
+      {/* Trending Deals Section */}
+      {trendingDeals.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5 text-primary" />
+                  Trending Deals
+                </CardTitle>
+                <CardDescription>Most popular deals right now</CardDescription>
+              </div>
+              <Badge variant="outline" className="bg-primary/10">
+                🔥 Hot
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+              {trendingDeals.map((deal) => (
+                <div key={deal.publicKey.toString()} className="group relative overflow-hidden rounded-lg border p-4 hover:border-primary transition-colors">
+                  <div className="absolute top-2 right-2">
+                    <Badge variant="default" className="text-xs">
+                      {deal.discountPercent}% OFF
+                    </Badge>
+                  </div>
+                  <div className="space-y-2">
+                    <h4 className="font-semibold line-clamp-1 pr-16">{deal.title}</h4>
+                    <p className="text-xs text-muted-foreground line-clamp-2">{deal.description}</p>
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-1 text-primary">
+                        <Users className="h-3 w-3" />
+                        <span className="font-medium">{deal.currentSupply.toNumber()} claimed</span>
+                      </div>
+                      <span className="font-bold text-green-600">
+                        ${baseUnitsToUsdc(deal.priceLamports.toNumber()).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                  <Link href={`/deals/${deal.publicKey.toString()}`} className="absolute inset-0" />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-        <div className="flex gap-2">
-          <Button
-            variant={category === 'all' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setCategory('all')}
-          >
-            All Categories
-          </Button>
-          <Button
-            variant={category === 'flights' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setCategory('flights')}
-          >
-            Flights
-          </Button>
-          <Button
-            variant={category === 'hotels' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setCategory('hotels')}
-          >
-            Hotels
-          </Button>
-          <Button
-            variant={category === 'shopping' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setCategory('shopping')}
-          >
-            Shopping
-          </Button>
-          <Button
-            variant={category === 'restaurants' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setCategory('restaurants')}
-          >
-            Restaurants
-          </Button>
-        </div>
-      </div>
+      {/* Search and Filters Section */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="space-y-4">
+            {/* Search Bar */}
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search deals by title, description, or category..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setShowFilters(!showFilters)}
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {/* Advanced Filters (Collapsible) */}
+            {showFilters && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t">
+                <div className="space-y-2">
+                  <Label htmlFor="sort">Sort By</Label>
+                  <Select value={sortBy} onValueChange={(value: any) => setSortBy(value)}>
+                    <SelectTrigger id="sort">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="newest">
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4" />
+                          Newest First
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="price-low">
+                        <div className="flex items-center gap-2">
+                          <DollarSign className="h-4 w-4" />
+                          Price: Low to High
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="price-high">
+                        <div className="flex items-center gap-2">
+                          <DollarSign className="h-4 w-4" />
+                          Price: High to Low
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="discount">
+                        <div className="flex items-center gap-2">
+                          <TrendingDown className="h-4 w-4" />
+                          Highest Discount
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="expiry">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="h-4 w-4" />
+                          Expiring Soon
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="popularity">
+                        <div className="flex items-center gap-2">
+                          <TrendingUp className="h-4 w-4" />
+                          Most Popular
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="min-price">Min Price (USDC)</Label>
+                  <Input
+                    id="min-price"
+                    type="number"
+                    placeholder="0"
+                    value={minPrice}
+                    onChange={(e) => setMinPrice(e.target.value)}
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="max-price">Max Price (USDC)</Label>
+                  <Input
+                    id="max-price"
+                    type="number"
+                    placeholder="No limit"
+                    value={maxPrice}
+                    onChange={(e) => setMaxPrice(e.target.value)}
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Status and Category Filters */}
+            <div className="flex flex-wrap gap-2 items-center">
+              <span className="text-sm font-medium">Status:</span>
+              <Button
+                variant={filter === 'all' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setFilter('all')}
+              >
+                All
+              </Button>
+              <Button
+                variant={filter === 'active' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setFilter('active')}
+              >
+                Active
+              </Button>
+              <Button
+                variant={filter === 'expired' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setFilter('expired')}
+              >
+                Expired
+              </Button>
+
+              <div className="border-l h-6 mx-2" />
+
+              <span className="text-sm font-medium">Category:</span>
+              <Button
+                variant={category === 'all' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setCategory('all')}
+              >
+                All
+              </Button>
+              <Button
+                variant={category === 'flights' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setCategory('flights')}
+              >
+                Flights
+              </Button>
+              <Button
+                variant={category === 'hotels' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setCategory('hotels')}
+              >
+                Hotels
+              </Button>
+              <Button
+                variant={category === 'shopping' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setCategory('shopping')}
+              >
+                Shopping
+              </Button>
+              <Button
+                variant={category === 'restaurants' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setCategory('restaurants')}
+              >
+                Restaurants
+              </Button>
+            </div>
+
+            {/* Location and External Deals Toggle */}
+            <div className="flex flex-wrap gap-2 items-center pt-2 border-t">
+              <Button
+                variant={location ? 'default' : 'outline'}
+                size="sm"
+                onClick={requestLocation}
+                disabled={locationLoading}
+              >
+                <MapPin className="h-4 w-4 mr-2" />
+                {location ? `Near Me (${nearbyRadius}km)` : locationLoading ? 'Getting location...' : 'Deals Near Me'}
+              </Button>
+              
+              {location && (
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="radius" className="text-xs">Radius:</Label>
+                  <Select value={nearbyRadius.toString()} onValueChange={(value) => setNearbyRadius(Number(value))}>
+                    <SelectTrigger id="radius" className="h-8 w-24 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="5">5 km</SelectItem>
+                      <SelectItem value="10">10 km</SelectItem>
+                      <SelectItem value="25">25 km</SelectItem>
+                      <SelectItem value="50">50 km</SelectItem>
+                      <SelectItem value="100">100 km</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => window.location.reload()}
+                    className="text-xs"
+                  >
+                    Clear
+                  </Button>
+                </div>
+              )}
+
+              <div className="border-l h-6 mx-2" />
+
+              <Button
+                variant={showExternal ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setShowExternal(!showExternal)}
+              >
+                <Globe className="h-4 w-4 mr-2" />
+                External Deals
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* External Deals Section */}
       {showExternal && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold">Live Deal Feed</h3>
-            {externalDeals.data && (
+            <h3 className="text-lg font-semibold">
+              {location ? `Deals Near You (${filteredExternalDeals.length})` : `Live Deal Feed`}
+            </h3>
+            {externalDeals.data && !location && (
               <Badge variant="outline">
-                {externalDeals.data.deals.length} deals from{' '}
+                {filteredExternalDeals.length} deals from{' '}
                 {Object.values(externalDeals.data.sources).reduce(
                   (acc, source) => acc + Object.values(source).reduce((a, b) => a + b, 0),
                   0
@@ -624,16 +981,44 @@ export function DealsList() {
                 sources
               </Badge>
             )}
+            {location && (
+              <Badge variant="default">
+                <MapPin className="h-3 w-3 mr-1" />
+                Within {nearbyRadius} km
+              </Badge>
+            )}
           </div>
 
           {externalDeals.isLoading ? (
             <div className="text-center py-8">Loading external deals...</div>
-          ) : externalDeals.data && externalDeals.data.deals.length > 0 ? (
+          ) : filteredExternalDeals.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {externalDeals.data.deals.map((deal) => (
-                <ExternalDealCard key={deal.id} deal={deal} />
+              {filteredExternalDeals.map((deal) => (
+                <div key={deal.id} className="relative">
+                  <ExternalDealCard deal={deal} />
+                  {deal.distance !== undefined && (
+                    <Badge variant="secondary" className="absolute top-2 right-2">
+                      <MapPin className="h-3 w-3 mr-1" />
+                      {deal.distance.toFixed(1)} km
+                    </Badge>
+                  )}
+                </div>
               ))}
             </div>
+          ) : location ? (
+            <Card>
+              <CardContent className="py-12">
+                <div className="text-center space-y-3">
+                  <MapPin className="h-12 w-12 mx-auto text-muted-foreground" />
+                  <div>
+                    <p className="font-medium">No deals found near your location</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Try increasing the search radius or turning off location filter
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           ) : (
             <Card>
               <CardContent className="py-12">
@@ -658,15 +1043,39 @@ export function DealsList() {
 
       {/* On-chain Deals Section */}
       <div className="space-y-4">
-        <h3 className="text-lg font-semibold">Blockchain Deals</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Blockchain Deals</h3>
+          <Badge variant="outline">{filteredAndSortedDeals.length} deals</Badge>
+        </div>
         {deals.isLoading ? (
           <div className="text-center py-8">Loading deals...</div>
-        ) : filteredDeals && filteredDeals.length > 0 ? (
+        ) : filteredAndSortedDeals.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {filteredDeals.map((deal) => (
+            {filteredAndSortedDeals.map((deal) => (
               <DealCard key={deal.publicKey.toString()} deal={deal} />
             ))}
           </div>
+        ) : searchQuery || minPrice || maxPrice ? (
+          <Card>
+            <CardContent className="py-12">
+              <div className="text-center space-y-3">
+                <Search className="h-12 w-12 mx-auto text-muted-foreground" />
+                <div>
+                  <p className="font-medium">No deals match your filters</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Try adjusting your search or filter criteria
+                  </p>
+                </div>
+                <Button onClick={() => {
+                  setSearchQuery('')
+                  setMinPrice('')
+                  setMaxPrice('')
+                }} variant="outline" size="sm">
+                  Clear Filters
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         ) : (
           <Card>
             <CardContent className="py-12">

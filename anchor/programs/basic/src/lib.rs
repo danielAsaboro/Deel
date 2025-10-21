@@ -1,15 +1,22 @@
 use anchor_lang::prelude::*;
-use anchor_lang::system_program::{transfer, Transfer};
 use anchor_spl::{
     associated_token::AssociatedToken,
     metadata::{
         create_metadata_accounts_v3, mpl_token_metadata::types::DataV2,
         CreateMetadataAccountsV3, Metadata,
     },
-    token::{mint_to, Mint, MintTo, Token, TokenAccount},
+    token::{self, mint_to, Mint, MintTo, Token, TokenAccount},
 };
 
 declare_id!("GUudyUKazJCyL2f7dTG6Nm7EgUsro3acDtbbMWFuUrRd");
+
+/// Mock USDC mint address for devnet/localnet testing
+/// 6 decimals (matches real USDC on mainnet)
+///
+/// For PRODUCTION/MAINNET: Replace with real USDC mint address:
+/// EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+#[constant]
+pub const MOCK_USDC_MINT: Pubkey = pubkey!("HJbM6NHDTHuhqPMNznyrseLKzuh7w1FQe2qGUFKV5iRp");
 
 #[program]
 pub mod basic {
@@ -67,23 +74,26 @@ pub mod basic {
         Ok(())
     }
 
-    pub fn mint_coupon(ctx: Context<MintCoupon>, deal_id: Pubkey, metadata_uri: String) -> Result<()> {
+    pub fn mint_coupon(ctx: Context<MintCoupon>, _deal_id: Pubkey, metadata_uri: String) -> Result<()> {
         let deal = &mut ctx.accounts.deal;
 
         require!(deal.is_active, DealError::DealInactive);
         require!(deal.current_supply < deal.max_supply, DealError::MaxSupplyReached);
         require!(Clock::get()?.unix_timestamp < deal.expiry_timestamp, DealError::DealExpired);
 
-        // Transfer payment from user to merchant
+        // Transfer USDC payment from user to merchant
         if deal.price_lamports > 0 {
-            let transfer_ctx = CpiContext::new(
-                ctx.accounts.system_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.user.to_account_info(),
-                    to: ctx.accounts.merchant.to_account_info(),
-                },
-            );
-            transfer(transfer_ctx, deal.price_lamports)?;
+            token::transfer(
+                CpiContext::new(
+                    ctx.accounts.token_program.to_account_info(),
+                    token::Transfer {
+                        from: ctx.accounts.user_usdc_account.to_account_info(),
+                        to: ctx.accounts.merchant_usdc_account.to_account_info(),
+                        authority: ctx.accounts.user.to_account_info(),
+                    },
+                ),
+                deal.price_lamports, // Now represents USDC amount in base units (6 decimals)
+            )?;
         }
 
         // Mint NFT to user
@@ -166,6 +176,14 @@ pub mod basic {
         Ok(())
     }
 
+    /// Transfer coupon ownership
+    ///
+    /// DESIGN NOTE: This updates the logical owner in the Coupon account.
+    /// The actual NFT (SPL token) transfer happens separately via token::transfer
+    /// in the frontend. This separation allows:
+    /// - On-chain business logic (redemption, listing) to check Coupon.owner
+    /// - NFTs to remain in user wallets (visible in explorers/wallets)
+    /// - Marketplace to transfer both token AND coupon ownership atomically
     pub fn transfer_coupon(ctx: Context<TransferCoupon>) -> Result<()> {
         let coupon = &mut ctx.accounts.coupon;
 
@@ -187,18 +205,32 @@ pub mod basic {
         let deal = &mut ctx.accounts.deal;
         let deal_rating = &mut ctx.accounts.deal_rating;
 
-        // If this is a new rating (account just initialized)
-        deal.total_ratings += 1;
-        deal.rating_sum += rating as u64;
+        // Check if this is an update or a new rating
+        if deal_rating.rating != 0 {
+            // User is updating their existing rating
+            // Subtract old rating and add new one
+            deal.rating_sum = deal.rating_sum
+                .checked_sub(deal_rating.rating as u64)
+                .unwrap()
+                .checked_add(rating as u64)
+                .unwrap();
+            msg!("Rating updated: {} → {} stars", deal_rating.rating, rating);
+        } else {
+            // New rating
+            deal.total_ratings += 1;
+            deal.rating_sum += rating as u64;
+            msg!("New rating: {} stars", rating);
+        }
 
-        // Store the user's rating
+        // Store/update the user's rating
         deal_rating.deal = deal.key();
         deal_rating.user = ctx.accounts.user.key();
         deal_rating.rating = rating;
-        deal_rating.created_at = Clock::get()?.unix_timestamp;
+        if deal_rating.created_at == 0 {
+            deal_rating.created_at = Clock::get()?.unix_timestamp;
+        }
         deal_rating.bump = ctx.bumps.deal_rating;
 
-        msg!("Deal rated: {} stars", rating);
         Ok(())
     }
 
@@ -216,6 +248,13 @@ pub mod basic {
         Ok(())
     }
 
+    /// List coupon for sale on secondary marketplace
+    ///
+    /// DESIGN NOTE: Uses listing_count to prevent PDA collisions.
+    /// Scenario: User lists coupon → delists → lists again
+    /// Without counter: Same PDA seeds = account already exists = error
+    /// With counter: Each listing gets unique PDA (listing #0, #1, #2, etc.)
+    /// The counter persists even after sale, allowing unlimited re-listings.
     pub fn list_coupon(ctx: Context<ListCoupon>, price_lamports: u64) -> Result<()> {
         require!(price_lamports > 0, DealError::InvalidPrice);
 
@@ -256,25 +295,31 @@ pub mod basic {
         let platform_fee = (listing.price_lamports * 25) / 1000;
         let seller_amount = listing.price_lamports - platform_fee;
 
-        // Transfer payment from buyer to seller
-        let transfer_to_seller = CpiContext::new(
-            ctx.accounts.system_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.buyer.to_account_info(),
-                to: ctx.accounts.seller.to_account_info(),
-            },
-        );
-        transfer(transfer_to_seller, seller_amount)?;
+        // Transfer USDC payment from buyer to seller
+        token::transfer(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                token::Transfer {
+                    from: ctx.accounts.buyer_usdc_account.to_account_info(),
+                    to: ctx.accounts.seller_usdc_account.to_account_info(),
+                    authority: ctx.accounts.buyer.to_account_info(),
+                },
+            ),
+            seller_amount,
+        )?;
 
-        // Transfer platform fee to platform wallet
-        let transfer_to_platform = CpiContext::new(
-            ctx.accounts.system_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.buyer.to_account_info(),
-                to: ctx.accounts.platform_wallet.to_account_info(),
-            },
-        );
-        transfer(transfer_to_platform, platform_fee)?;
+        // Transfer USDC platform fee to platform wallet
+        token::transfer(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                token::Transfer {
+                    from: ctx.accounts.buyer_usdc_account.to_account_info(),
+                    to: ctx.accounts.platform_usdc_account.to_account_info(),
+                    authority: ctx.accounts.buyer.to_account_info(),
+                },
+            ),
+            platform_fee,
+        )?;
 
         // Store the current sale number and increment counter
         let current_sale_number = coupon.sale_count;
@@ -349,26 +394,177 @@ pub mod basic {
         let staked_coupon = &ctx.accounts.staked_coupon;
         require!(staked_coupon.staker == ctx.accounts.staker.key(), DealError::NotOwner);
 
-        // Calculate and transfer rewards
+        // Calculate and transfer USDC rewards
         let current_time = Clock::get()?.unix_timestamp;
         let time_staked = current_time - staked_coupon.last_claim_at;
         let rewards = calculate_rewards(time_staked, ctx.accounts.rewards_pool.reward_rate_per_day)?;
 
         if rewards > 0 {
-            let transfer_ctx = CpiContext::new(
-                ctx.accounts.system_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.rewards_pool.to_account_info(),
-                    to: ctx.accounts.staker.to_account_info(),
-                },
-            );
-            transfer(transfer_ctx, rewards)?;
+            // Transfer USDC rewards from pool to staker
+            token::transfer(
+                CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    token::Transfer {
+                        from: ctx.accounts.rewards_pool_usdc_account.to_account_info(),
+                        to: ctx.accounts.staker_usdc_account.to_account_info(),
+                        authority: ctx.accounts.rewards_pool.to_account_info(),
+                    },
+                    &[&[b"rewards_pool", &[ctx.bumps.rewards_pool]]],
+                ),
+                rewards,
+            )?;
         }
 
         let pool = &mut ctx.accounts.rewards_pool;
         pool.total_staked -= 1;
 
-        msg!("Coupon unstaked, rewards claimed: {} lamports", rewards);
+        msg!("Coupon unstaked, rewards claimed: {} USDC base units", rewards);
+        Ok(())
+    }
+
+    // Initialize or update user profile
+    pub fn initialize_user_profile(ctx: Context<InitializeUserProfile>) -> Result<()> {
+        let profile = &mut ctx.accounts.user_profile;
+        let clock = Clock::get()?;
+
+        if profile.deals_claimed == 0 {
+            profile.user = ctx.accounts.user.key();
+            profile.first_deal_timestamp = clock.unix_timestamp;
+        }
+        profile.last_activity_timestamp = clock.unix_timestamp;
+        profile.bump = ctx.bumps.user_profile;
+
+        Ok(())
+    }
+
+    // Mint a loyalty badge for achieving milestones
+    pub fn mint_loyalty_badge(
+        ctx: Context<MintLoyaltyBadge>,
+        badge_type: u8,
+        title: String,
+        description: String,
+    ) -> Result<()> {
+        require!(badge_type >= 1 && badge_type <= 4, DealError::InvalidBadgeType);
+        
+        let badge = &mut ctx.accounts.loyalty_badge;
+        let clock = Clock::get()?;
+
+        badge.user = ctx.accounts.user.key();
+        badge.mint = ctx.accounts.badge_mint.key();
+        badge.badge_type = badge_type;
+        badge.earned_at = clock.unix_timestamp;
+        badge.title = title.clone();
+        badge.description = description;
+        badge.bump = ctx.bumps.loyalty_badge;
+
+        // Update user profile
+        let profile = &mut ctx.accounts.user_profile;
+        profile.badges_earned = profile.badges_earned.checked_add(1).unwrap();
+
+        // Mint the NFT badge
+        let cpi_accounts = MintTo {
+            mint: ctx.accounts.badge_mint.to_account_info(),
+            to: ctx.accounts.badge_token_account.to_account_info(),
+            authority: ctx.accounts.user.to_account_info(),
+        };
+        let cpi_program = ctx.accounts.token_program.to_account_info();
+        let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+        mint_to(cpi_ctx, 1)?;
+
+        msg!("Loyalty badge minted: {} (Type {})", title, badge_type);
+        Ok(())
+    }
+
+    // Create a group deal
+    pub fn create_group_deal(
+        ctx: Context<CreateGroupDeal>,
+        target_participants: u32,
+        tier1_threshold: u32,
+        tier1_discount: u8,
+        tier2_threshold: u32,
+        tier2_discount: u8,
+        tier3_threshold: u32,
+        tier3_discount: u8,
+        expiry_timestamp: i64,
+        price_lamports: u64,
+    ) -> Result<()> {
+        require!(tier1_discount <= 100, DealError::InvalidDiscount);
+        require!(tier2_discount <= 100, DealError::InvalidDiscount);
+        require!(tier3_discount <= 100, DealError::InvalidDiscount);
+        require!(tier1_threshold > 0, DealError::InvalidGroupThreshold);
+        require!(tier2_threshold >= tier1_threshold, DealError::InvalidGroupThreshold);
+        require!(tier3_threshold >= tier2_threshold, DealError::InvalidGroupThreshold);
+        require!(expiry_timestamp > Clock::get()?.unix_timestamp, DealError::InvalidExpiry);
+
+        let group_deal = &mut ctx.accounts.group_deal;
+        group_deal.deal = ctx.accounts.deal.key();
+        group_deal.creator = ctx.accounts.creator.key();
+        group_deal.target_participants = target_participants;
+        group_deal.current_participants = 0;
+        group_deal.tier1_discount = tier1_discount;
+        group_deal.tier2_discount = tier2_discount;
+        group_deal.tier3_discount = tier3_discount;
+        group_deal.tier1_threshold = tier1_threshold;
+        group_deal.tier2_threshold = tier2_threshold;
+        group_deal.tier3_threshold = tier3_threshold;
+        group_deal.expiry_timestamp = expiry_timestamp;
+        group_deal.is_active = true;
+        group_deal.price_lamports = price_lamports;
+        group_deal.bump = ctx.bumps.group_deal;
+
+        msg!("Group deal created with {} tiers", 3);
+        Ok(())
+    }
+
+    // Join a group deal
+    pub fn join_group_deal(ctx: Context<JoinGroupDeal>) -> Result<()> {
+        let group_deal = &mut ctx.accounts.group_deal;
+        let clock = Clock::get()?;
+
+        require!(group_deal.is_active, DealError::DealInactive);
+        require!(group_deal.expiry_timestamp > clock.unix_timestamp, DealError::DealExpired);
+        require!(
+            group_deal.current_participants < group_deal.target_participants,
+            DealError::MaxSupplyReached
+        );
+
+        let participant = &mut ctx.accounts.participant;
+        participant.group_deal = group_deal.key();
+        participant.participant = ctx.accounts.user.key();
+        participant.joined_at = clock.unix_timestamp;
+        participant.has_claimed = false;
+        participant.bump = ctx.bumps.participant;
+
+        group_deal.current_participants = group_deal.current_participants.checked_add(1).unwrap();
+
+        msg!("User joined group deal: {}/{}", group_deal.current_participants, group_deal.target_participants);
+        Ok(())
+    }
+
+    // Claim coupon from group deal (once threshold is met)
+    pub fn claim_group_deal_coupon(ctx: Context<ClaimGroupDealCoupon>) -> Result<()> {
+        let group_deal = &ctx.accounts.group_deal;
+        let participant = &mut ctx.accounts.participant;
+
+        require!(!participant.has_claimed, DealError::AlreadyRedeemed);
+        require!(
+            group_deal.current_participants >= group_deal.tier1_threshold,
+            DealError::GroupThresholdNotMet
+        );
+
+        // Determine discount tier
+        let discount = if group_deal.current_participants >= group_deal.tier3_threshold {
+            group_deal.tier3_discount
+        } else if group_deal.current_participants >= group_deal.tier2_threshold {
+            group_deal.tier2_discount
+        } else {
+            group_deal.tier1_discount
+        };
+
+        // Mark as claimed
+        participant.has_claimed = true;
+
+        msg!("Group deal coupon claimed with {}% discount", discount);
         Ok(())
     }
 
@@ -382,18 +578,23 @@ pub mod basic {
 
         require!(rewards > 0, DealError::NoRewardsToClaim);
 
-        let transfer_ctx = CpiContext::new(
-            ctx.accounts.system_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.rewards_pool.to_account_info(),
-                to: ctx.accounts.staker.to_account_info(),
-            },
-        );
-        transfer(transfer_ctx, rewards)?;
+        // Transfer USDC rewards from pool to staker
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                token::Transfer {
+                    from: ctx.accounts.rewards_pool_usdc_account.to_account_info(),
+                    to: ctx.accounts.staker_usdc_account.to_account_info(),
+                    authority: ctx.accounts.rewards_pool.to_account_info(),
+                },
+                &[&[b"rewards_pool", &[ctx.bumps.rewards_pool]]],
+            ),
+            rewards,
+        )?;
 
         staked_coupon.last_claim_at = current_time;
 
-        msg!("Rewards claimed: {} lamports", rewards);
+        msg!("Rewards claimed: {} USDC base units", rewards);
         Ok(())
     }
 }
@@ -477,9 +678,22 @@ pub struct MintCoupon<'info> {
     #[account(mut)]
     pub metadata: UncheckedAccount<'info>,
 
-    /// CHECK: Merchant account to receive payment
+    // USDC payment accounts
     #[account(
         mut,
+        constraint = user_usdc_account.mint == MOCK_USDC_MINT @ DealError::InvalidPaymentToken
+    )]
+    pub user_usdc_account: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        constraint = merchant_usdc_account.mint == MOCK_USDC_MINT @ DealError::InvalidPaymentToken,
+        constraint = merchant_usdc_account.owner == deal.merchant @ DealError::UnauthorizedMerchant
+    )]
+    pub merchant_usdc_account: Account<'info, TokenAccount>,
+
+    /// CHECK: Merchant account (wallet address, not token account)
+    #[account(
         constraint = merchant.key() == deal.merchant @ DealError::UnauthorizedMerchant
     )]
     pub merchant: UncheckedAccount<'info>,
@@ -596,6 +810,13 @@ pub struct ListCoupon<'info> {
     pub staked_coupon: UncheckedAccount<'info>,
 }
 
+/// Buy coupon from secondary marketplace
+///
+/// DESIGN NOTE: Creates permanent Sale PDA using sale_count.
+/// Similar to listing_count, this prevents collisions when the same coupon
+/// is traded multiple times. Sale records are never deleted, creating an
+/// immutable on-chain history of all secondary market transactions.
+/// Seeds: [b"sale", coupon, sale_count] ensures each trade gets unique PDA.
 #[derive(Accounts)]
 pub struct BuyCoupon<'info> {
     #[account(
@@ -620,7 +841,27 @@ pub struct BuyCoupon<'info> {
     )]
     pub sale: Account<'info, Sale>,
 
-    /// CHECK: Seller receiving payment
+    // USDC payment accounts
+    #[account(
+        mut,
+        constraint = buyer_usdc_account.mint == MOCK_USDC_MINT @ DealError::InvalidPaymentToken
+    )]
+    pub buyer_usdc_account: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        constraint = seller_usdc_account.mint == MOCK_USDC_MINT @ DealError::InvalidPaymentToken,
+        constraint = seller_usdc_account.owner == listing.seller @ DealError::InvalidListing
+    )]
+    pub seller_usdc_account: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        constraint = platform_usdc_account.mint == MOCK_USDC_MINT @ DealError::InvalidPaymentToken
+    )]
+    pub platform_usdc_account: Account<'info, TokenAccount>,
+
+    /// CHECK: Seller wallet address (receives rent when listing closes)
     #[account(
         mut,
         constraint = seller.key() == listing.seller @ DealError::InvalidListing
@@ -630,11 +871,11 @@ pub struct BuyCoupon<'info> {
     #[account(mut)]
     pub buyer: Signer<'info>,
 
-    /// CHECK: Platform wallet receiving fees
-    #[account(mut)]
+    /// CHECK: Platform wallet address
     pub platform_wallet: UncheckedAccount<'info>,
 
     pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
@@ -700,13 +941,27 @@ pub struct UnstakeCouponCtx<'info> {
 
     pub coupon: Account<'info, Coupon>,
 
-    #[account(mut)]
+    #[account(mut, seeds = [b"rewards_pool"], bump)]
     pub rewards_pool: Account<'info, RewardsPool>,
+
+    // USDC reward accounts
+    #[account(
+        mut,
+        constraint = rewards_pool_usdc_account.mint == MOCK_USDC_MINT @ DealError::InvalidPaymentToken
+    )]
+    pub rewards_pool_usdc_account: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        constraint = staker_usdc_account.mint == MOCK_USDC_MINT @ DealError::InvalidPaymentToken
+    )]
+    pub staker_usdc_account: Account<'info, TokenAccount>,
 
     #[account(mut)]
     pub staker: Signer<'info>,
 
     pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
@@ -714,13 +969,136 @@ pub struct ClaimRewardsCtx<'info> {
     #[account(mut)]
     pub staked_coupon: Account<'info, StakedCoupon>,
 
-    #[account(mut)]
+    #[account(mut, seeds = [b"rewards_pool"], bump)]
     pub rewards_pool: Account<'info, RewardsPool>,
+
+    // USDC reward accounts
+    #[account(
+        mut,
+        constraint = rewards_pool_usdc_account.mint == MOCK_USDC_MINT @ DealError::InvalidPaymentToken
+    )]
+    pub rewards_pool_usdc_account: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        constraint = staker_usdc_account.mint == MOCK_USDC_MINT @ DealError::InvalidPaymentToken
+    )]
+    pub staker_usdc_account: Account<'info, TokenAccount>,
 
     #[account(mut)]
     pub staker: Signer<'info>,
 
     pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+}
+
+// New account contexts for loyalty badges and group deals
+
+#[derive(Accounts)]
+pub struct InitializeUserProfile<'info> {
+    #[account(
+        init_if_needed,
+        payer = user,
+        space = 8 + UserProfile::INIT_SPACE,
+        seeds = [b"user_profile", user.key().as_ref()],
+        bump
+    )]
+    pub user_profile: Account<'info, UserProfile>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(badge_type: u8)]
+pub struct MintLoyaltyBadge<'info> {
+    #[account(
+        init,
+        payer = user,
+        space = 8 + LoyaltyBadge::INIT_SPACE,
+        seeds = [b"loyalty_badge", user.key().as_ref(), &[badge_type]],
+        bump
+    )]
+    pub loyalty_badge: Account<'info, LoyaltyBadge>,
+
+    #[account(mut)]
+    pub user_profile: Account<'info, UserProfile>,
+
+    #[account(
+        init,
+        payer = user,
+        mint::decimals = 0,
+        mint::authority = user,
+        mint::freeze_authority = user,
+    )]
+    pub badge_mint: Account<'info, Mint>,
+
+    #[account(
+        init,
+        payer = user,
+        associated_token::mint = badge_mint,
+        associated_token::authority = user,
+    )]
+    pub badge_token_account: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    pub rent: Sysvar<'info, Rent>,
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+}
+
+#[derive(Accounts)]
+pub struct CreateGroupDeal<'info> {
+    pub deal: Account<'info, Deal>,
+
+    #[account(
+        init,
+        payer = creator,
+        space = 8 + GroupDeal::INIT_SPACE,
+        seeds = [b"group_deal", deal.key().as_ref(), creator.key().as_ref()],
+        bump
+    )]
+    pub group_deal: Account<'info, GroupDeal>,
+
+    #[account(mut)]
+    pub creator: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct JoinGroupDeal<'info> {
+    #[account(mut)]
+    pub group_deal: Account<'info, GroupDeal>,
+
+    #[account(
+        init,
+        payer = user,
+        space = 8 + GroupParticipant::INIT_SPACE,
+        seeds = [b"group_participant", group_deal.key().as_ref(), user.key().as_ref()],
+        bump
+    )]
+    pub participant: Account<'info, GroupParticipant>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ClaimGroupDealCoupon<'info> {
+    pub group_deal: Account<'info, GroupDeal>,
+
+    #[account(mut)]
+    pub participant: Account<'info, GroupParticipant>,
+
+    pub user: Signer<'info>,
 }
 
 #[account]
@@ -823,6 +1201,67 @@ pub struct StakedCoupon {
     pub bump: u8,
 }
 
+/// User Profile - tracks user activity and achievements
+#[account]
+#[derive(InitSpace)]
+pub struct UserProfile {
+    pub user: Pubkey,
+    pub deals_claimed: u64,
+    pub total_spent_lamports: u64,
+    pub badges_earned: u32,
+    pub first_deal_timestamp: i64,
+    pub last_activity_timestamp: i64,
+    pub total_savings_lamports: u64,  // Total discount value earned
+    pub referrals_made: u32,
+    pub bump: u8,
+}
+
+/// Loyalty Badge - NFT achievement for user milestones
+#[account]
+#[derive(InitSpace)]
+pub struct LoyaltyBadge {
+    pub user: Pubkey,
+    pub mint: Pubkey,
+    pub badge_type: u8,  // 1=Bronze, 2=Silver, 3=Gold, 4=Platinum
+    pub earned_at: i64,
+    #[max_len(50)]
+    pub title: String,
+    #[max_len(200)]
+    pub description: String,
+    pub bump: u8,
+}
+
+/// Group Deal - collaborative buying with tiered discounts
+#[account]
+#[derive(InitSpace)]
+pub struct GroupDeal {
+    pub deal: Pubkey,
+    pub creator: Pubkey,
+    pub target_participants: u32,
+    pub current_participants: u32,
+    pub tier1_discount: u8,  // Discount at tier 1 (e.g., 5 people)
+    pub tier2_discount: u8,  // Discount at tier 2 (e.g., 10 people)
+    pub tier3_discount: u8,  // Discount at tier 3 (e.g., 20 people)
+    pub tier1_threshold: u32,
+    pub tier2_threshold: u32,
+    pub tier3_threshold: u32,
+    pub expiry_timestamp: i64,
+    pub is_active: bool,
+    pub price_lamports: u64,
+    pub bump: u8,
+}
+
+/// Group Deal Participant
+#[account]
+#[derive(InitSpace)]
+pub struct GroupParticipant {
+    pub group_deal: Pubkey,
+    pub participant: Pubkey,
+    pub joined_at: i64,
+    pub has_claimed: bool,
+    pub bump: u8,
+}
+
 #[error_code]
 pub enum DealError {
     #[msg("Invalid discount percentage")]
@@ -857,4 +1296,12 @@ pub enum DealError {
     NoRewardsToClaim,
     #[msg("Coupon is currently staked and cannot be redeemed, transferred, or listed")]
     CouponStaked,
+    #[msg("Invalid payment token - must use platform USDC")]
+    InvalidPaymentToken,
+    #[msg("Invalid badge type (must be 1-4)")]
+    InvalidBadgeType,
+    #[msg("Invalid group threshold configuration")]
+    InvalidGroupThreshold,
+    #[msg("Group deal threshold not yet met")]
+    GroupThresholdNotMet,
 }

@@ -16,7 +16,11 @@
 import * as anchor from '@coral-xyz/anchor'
 import { Program, BN } from '@coral-xyz/anchor'
 import { Basic } from '../target/types/basic'
-import { PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js'
+import { PublicKey } from '@solana/web3.js'
+
+// USDC configuration (matches mainnet USDC: 6 decimals)
+const USDC_DECIMALS = 6
+const USDC_BASE_UNIT = 10 ** USDC_DECIMALS // 1 USDC = 1,000,000 base units
 
 // Demo deals inspired by external API data
 const DEMO_DEALS = [
@@ -27,7 +31,7 @@ const DEMO_DEALS = [
     maxSupply: 10,
     expiryDays: 30,
     category: 'flights',
-    priceLamports: 0.5 * LAMPORTS_PER_SOL, // 0.5 SOL
+    priceLamports: 750 * USDC_BASE_UNIT, // 750 USDC - Premium economy transatlantic
   },
   {
     title: 'Manhattan Boutique Hotel',
@@ -36,7 +40,7 @@ const DEMO_DEALS = [
     maxSupply: 20,
     expiryDays: 60,
     category: 'hotels',
-    priceLamports: 0.15 * LAMPORTS_PER_SOL,
+    priceLamports: 300 * USDC_BASE_UNIT, // 300 USDC - 4-star NYC hotel
   },
   {
     title: 'Authentic Italian Restaurant',
@@ -45,7 +49,7 @@ const DEMO_DEALS = [
     maxSupply: 5,
     expiryDays: 7,
     category: 'restaurants',
-    priceLamports: 0.025 * LAMPORTS_PER_SOL,
+    priceLamports: 50 * USDC_BASE_UNIT, // 50 USDC - Restaurant voucher
   },
   {
     title: 'Premium Wireless Headphones',
@@ -54,7 +58,7 @@ const DEMO_DEALS = [
     maxSupply: 15,
     expiryDays: 90,
     category: 'shopping',
-    priceLamports: 0.2 * LAMPORTS_PER_SOL,
+    priceLamports: 350 * USDC_BASE_UNIT, // 350 USDC - Premium headphones
   },
   {
     title: 'SF Bay Area Weekend Getaway',
@@ -63,7 +67,7 @@ const DEMO_DEALS = [
     maxSupply: 8,
     expiryDays: 45,
     category: 'hotels',
-    priceLamports: 0.3 * LAMPORTS_PER_SOL,
+    priceLamports: 450 * USDC_BASE_UNIT, // 450 USDC - Weekend package
   },
   {
     title: 'Tokyo Return Flight Deal',
@@ -72,7 +76,7 @@ const DEMO_DEALS = [
     maxSupply: 6,
     expiryDays: 60,
     category: 'flights',
-    priceLamports: 0.8 * LAMPORTS_PER_SOL,
+    priceLamports: 1200 * USDC_BASE_UNIT, // 1200 USDC - Business class transpacific
   },
   {
     title: 'Sushi Omakase Experience',
@@ -81,7 +85,7 @@ const DEMO_DEALS = [
     maxSupply: 4,
     expiryDays: 14,
     category: 'restaurants',
-    priceLamports: 0.15 * LAMPORTS_PER_SOL,
+    priceLamports: 250 * USDC_BASE_UNIT, // 250 USDC - Premium omakase
   },
   {
     title: 'Designer Watch Collection',
@@ -90,7 +94,7 @@ const DEMO_DEALS = [
     maxSupply: 10,
     expiryDays: 120,
     category: 'shopping',
-    priceLamports: 0.35 * LAMPORTS_PER_SOL,
+    priceLamports: 500 * USDC_BASE_UNIT, // 500 USDC - Luxury watch
   },
 ]
 
@@ -132,7 +136,7 @@ async function seedDemoData() {
       console.log(`   Category: ${deal.category}`)
       console.log(`   Discount: ${deal.discountPercent}%`)
       console.log(`   Supply: ${deal.maxSupply}`)
-      console.log(`   Price: ${(deal.priceLamports / LAMPORTS_PER_SOL).toFixed(4)} SOL`)
+      console.log(`   Price: $${(deal.priceLamports / USDC_BASE_UNIT).toFixed(2)} USDC`)
       console.log(`   Expires in: ${deal.expiryDays} days`)
 
       const signature = await program.methods

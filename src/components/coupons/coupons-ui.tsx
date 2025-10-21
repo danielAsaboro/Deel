@@ -15,14 +15,15 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import QRCode from 'qrcode'
-import { Gift, QrCode, Ticket, History, DollarSign } from 'lucide-react'
+import { Gift, QrCode, Ticket, History, DollarSign, ExternalLink } from 'lucide-react'
 import { useUsdcPrice } from '@/hooks/use-usdc-price'
+import { useConnection } from '@solana/wallet-adapter-react'
 
 export function CouponCard({ coupon, deal }: { coupon: Coupon; deal?: Deal }) {
   const { transferCoupon, generateRedemptionQR } = useCouponsProgram()
   const { useCouponSales } = useSaleHistory()
   const { listCoupon, userCoupons: marketplaceCoupons } = useMarketplaceProgram()
-  const { usdcToLamports, lamportsToUsdc } = useUsdcPrice()
+  const { usdcToBaseUnits, baseUnitsToUsdc } = useUsdcPrice()
   const couponSales = useCouponSales(coupon.publicKey)
 
   const [showQR, setShowQR] = useState(false)
@@ -67,7 +68,7 @@ export function CouponCard({ coupon, deal }: { coupon: Coupon; deal?: Deal }) {
   const handleListOnMarketplace = async () => {
     if (!listingPrice || parseFloat(listingPrice) <= 0) return
 
-    const priceLamports = usdcToLamports(parseFloat(listingPrice))
+    const priceLamports = usdcToBaseUnits(parseFloat(listingPrice))
     await listCoupon.mutateAsync({
       couponPubkey: coupon.publicKey,
       priceLamports,
@@ -198,6 +199,37 @@ export function CouponCard({ coupon, deal }: { coupon: Coupon; deal?: Deal }) {
               View Sale History ({couponSales.data.length})
             </Button>
           )}
+          
+          {/* NFT Marketplace Links */}
+          <div className="w-full pt-2 border-t">
+            <p className="text-xs text-muted-foreground mb-2">View on NFT Marketplaces:</p>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const magicEdenUrl = `https://magiceden.io/item-details/${coupon.mint.toString()}`
+                  window.open(magicEdenUrl, '_blank')
+                }}
+                className="flex-1 text-xs"
+              >
+                <ExternalLink className="h-3 w-3 mr-1" />
+                Magic Eden
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const tensorUrl = `https://www.tensor.trade/item/${coupon.mint.toString()}`
+                  window.open(tensorUrl, '_blank')
+                }}
+                className="flex-1 text-xs"
+              >
+                <ExternalLink className="h-3 w-3 mr-1" />
+                Tensor
+              </Button>
+            </div>
+          </div>
         </CardFooter>
       </Card>
 

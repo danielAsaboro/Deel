@@ -248,8 +248,8 @@ export function AccountTransactions({ address }: { address: PublicKey }) {
 }
 
 function BalanceUsdc({ balance }: { balance: number }) {
-  const { lamportsToUsdc } = useUsdcPrice()
-  return <span>${lamportsToUsdc(balance).toFixed(2)}</span>
+  const { baseUnitsToUsdc } = useUsdcPrice()
+  return <span>${baseUnitsToUsdc(balance).toFixed(2)}</span>
 }
 
 function ModalReceive({ address }: { address: PublicKey }) {

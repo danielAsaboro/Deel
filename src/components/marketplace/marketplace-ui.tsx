@@ -7,13 +7,15 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Listing, CouponWithListing, ListingWithDeal } from './marketplace-data-access'
-import { LAMPORTS_PER_SOL, PublicKey, Keypair } from '@solana/web3.js'
+import { LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { useUsdcPrice } from '@/hooks/use-usdc-price'
 import { Calendar, TrendingDown, Tag, User } from 'lucide-react'
 
-// Platform wallet for receiving fees - replace with real wallet for production
-const PLATFORM_WALLET = Keypair.generate().publicKey
+// Platform wallet for receiving fees from marketplace transactions (2.5%)
+const PLATFORM_WALLET = new PublicKey(
+  process.env.NEXT_PUBLIC_PLATFORM_WALLET || 'F7WDdJPuXThzHCVNA4Spp7JDqM6L1Xz9YjPZMqT4oP3N'
+)
 
 export function MarketplaceListings({
   listings,
@@ -24,10 +26,10 @@ export function MarketplaceListings({
   onBuy: (listing: Listing) => void
   isLoading: boolean
 }) {
-  const { lamportsToUsdc } = useUsdcPrice()
+  const { baseUnitsToUsdc } = useUsdcPrice()
 
   const formatUSDC = (lamports: number) => {
-    return lamportsToUsdc(lamports).toFixed(2)
+    return baseUnitsToUsdc(lamports).toFixed(2)
   }
 
   if (listings.length === 0) {
@@ -132,7 +134,7 @@ export function UserCouponsManager({
   onDelist: (listingPubkey: PublicKey, couponPubkey: PublicKey) => void
   isLoading: boolean
 }) {
-  const { usdcToLamports, lamportsToUsdc } = useUsdcPrice()
+  const { usdcToBaseUnits, baseUnitsToUsdc } = useUsdcPrice()
   const [listingPrices, setListingPrices] = useState<Record<string, string>>({})
 
   const handleList = (couponPubkey: PublicKey) => {
@@ -140,7 +142,7 @@ export function UserCouponsManager({
     if (!priceUSDC || parseFloat(priceUSDC) <= 0) {
       return
     }
-    const priceLamports = usdcToLamports(parseFloat(priceUSDC))
+    const priceLamports = usdcToBaseUnits(parseFloat(priceUSDC))
     onList(couponPubkey, priceLamports)
     setListingPrices({ ...listingPrices, [couponPubkey.toString()]: '' })
   }
@@ -179,7 +181,7 @@ export function UserCouponsManager({
                 <div className="flex items-center gap-2">
                   <div className="text-right">
                     <p className="text-sm font-bold">
-                      ${lamportsToUsdc(coupon.listing.priceLamports.toNumber()).toFixed(2)} USDC
+                      ${baseUnitsToUsdc(coupon.listing.priceLamports.toNumber()).toFixed(2)} USDC
                     </p>
                     <p className="text-xs text-muted-foreground">Listed price</p>
                   </div>

@@ -9,10 +9,10 @@ import { BN } from '@coral-xyz/anchor'
 import { TrendingUp, DollarSign, Users, Activity } from 'lucide-react'
 
 export function RecentSalesActivity({ sales, limit = 10 }: { sales: Sale[]; limit?: number }) {
-  const { lamportsToUsdc } = useUsdcPrice()
+  const { baseUnitsToUsdc } = useUsdcPrice()
 
   const formatUSDC = (lamports: number) => {
-    return lamportsToUsdc(lamports).toFixed(2)
+    return baseUnitsToUsdc(lamports).toFixed(2)
   }
 
   const formatTimeAgo = (timestamp: number) => {
@@ -101,10 +101,10 @@ export function MarketStatistics({
     uniqueTraders: number
   }
 }) {
-  const { lamportsToUsdc } = useUsdcPrice()
+  const { baseUnitsToUsdc } = useUsdcPrice()
 
   const formatUSDC = (lamports: number) => {
-    return lamportsToUsdc(lamports).toFixed(2)
+    return baseUnitsToUsdc(lamports).toFixed(2)
   }
 
   return (
@@ -163,10 +163,10 @@ function StatCard({
 }
 
 export function CouponSaleHistory({ sales }: { sales: Sale[] }) {
-  const { lamportsToUsdc } = useUsdcPrice()
+  const { baseUnitsToUsdc } = useUsdcPrice()
 
   const formatUSDC = (lamports: number) => {
-    return lamportsToUsdc(lamports).toFixed(2)
+    return baseUnitsToUsdc(lamports).toFixed(2)
   }
 
   const formatDate = (timestamp: number) => {

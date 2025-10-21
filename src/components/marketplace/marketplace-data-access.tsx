@@ -2,7 +2,13 @@
 
 import { getBasicProgram, getBasicProgramId } from '@project/anchor'
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
-import { Cluster, PublicKey, SystemProgram, Transaction } from '@solana/web3.js'
+import {
+  Cluster,
+  PublicKey,
+  SystemProgram,
+  Transaction,
+  TransactionInstruction,
+} from '@solana/web3.js'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { useCluster } from '../cluster/cluster-data-access'
@@ -12,6 +18,18 @@ import { useGateway } from '../gateway/gateway-data-access'
 import { buildGatewayTransaction, sendGatewayTransaction, gatewayTransactionTracker } from '@/lib/gateway'
 import { toast } from 'sonner'
 import { BN } from '@coral-xyz/anchor'
+import {
+  createAssociatedTokenAccountInstruction,
+  getAssociatedTokenAddressSync,
+  TOKEN_PROGRAM_ID,
+} from '@solana/spl-token'
+
+// USDC mint address (configurable via environment variable)
+// Devnet/Localnet: HJbM6NHDTHuhqPMNznyrseLKzuh7w1FQe2qGUFKV5iRp
+// Mainnet: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+const USDC_MINT = new PublicKey(
+  process.env.NEXT_PUBLIC_USDC_MINT || 'HJbM6NHDTHuhqPMNznyrseLKzuh7w1FQe2qGUFKV5iRp'
+)
 
 export interface Listing {
   publicKey: PublicKey
@@ -313,6 +331,81 @@ export function useMarketplaceProgram() {
         program.programId
       )
 
+      // Derive USDC token accounts for payment
+      const buyerUsdcAccount = getAssociatedTokenAddressSync(USDC_MINT, publicKey)
+
+      const sellerUsdcAccount = getAssociatedTokenAddressSync(USDC_MINT, sellerPubkey)
+
+      const platformUsdcAccount = getAssociatedTokenAddressSync(
+        USDC_MINT,
+        platformWallet,
+        true // allowOwnerOffCurve – platform wallet can be a PDA
+      )
+
+      const setupInstructions: TransactionInstruction[] = []
+
+      const [buyerUsdcInfo, sellerUsdcInfo, platformUsdcInfo] = await Promise.all([
+        connection.getAccountInfo(buyerUsdcAccount),
+        connection.getAccountInfo(sellerUsdcAccount),
+        connection.getAccountInfo(platformUsdcAccount),
+      ])
+
+      if (!buyerUsdcInfo) {
+        setupInstructions.push(
+          createAssociatedTokenAccountInstruction(
+            publicKey,
+            buyerUsdcAccount,
+            publicKey,
+            USDC_MINT,
+            TOKEN_PROGRAM_ID
+          )
+        )
+      }
+
+      if (!sellerUsdcInfo) {
+        setupInstructions.push(
+          createAssociatedTokenAccountInstruction(
+            publicKey,
+            sellerUsdcAccount,
+            sellerPubkey,
+            USDC_MINT,
+            TOKEN_PROGRAM_ID
+          )
+        )
+      }
+
+      if (!platformUsdcInfo) {
+        setupInstructions.push(
+          createAssociatedTokenAccountInstruction(
+            publicKey,
+            platformUsdcAccount,
+            platformWallet,
+            USDC_MINT,
+            TOKEN_PROGRAM_ID
+          )
+        )
+      }
+
+      let methodBuilder = program.methods
+        .buyCoupon()
+        .accounts({
+          listing: listingPubkey,
+          coupon: couponPubkey,
+          sale: salePda,
+          buyerUsdcAccount,
+          sellerUsdcAccount,
+          platformUsdcAccount,
+          seller: sellerPubkey,
+          buyer: publicKey,
+          platformWallet,
+          systemProgram: SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        } as any)
+
+      if (setupInstructions.length > 0) {
+        methodBuilder = methodBuilder.preInstructions(setupInstructions)
+      }
+
       let signature: string
 
       // Check if Gateway is enabled and configured
@@ -328,18 +421,7 @@ export function useMarketplaceProgram() {
 
           toast.info('Building transaction with Gateway...')
 
-          const tx = await program.methods
-            .buyCoupon()
-            .accounts({
-              listing: listingPubkey,
-              coupon: couponPubkey,
-              sale: salePda,
-              seller: sellerPubkey,
-              buyer: publicKey,
-              platformWallet,
-              systemProgram: SystemProgram.programId,
-            } as any)
-            .transaction()
+          const tx = await methodBuilder.transaction()
 
           const { blockhash } = await connection.getLatestBlockhash()
           tx.recentBlockhash = blockhash
@@ -388,18 +470,7 @@ export function useMarketplaceProgram() {
       } else {
         // Fallback to standard RPC
         toast.info('Sending transaction via standard RPC...')
-        signature = await program.methods
-          .buyCoupon()
-          .accounts({
-            listing: listingPubkey,
-            coupon: couponPubkey,
-            sale: salePda,
-            seller: sellerPubkey,
-            buyer: publicKey,
-            platformWallet,
-            systemProgram: SystemProgram.programId,
-          } as any)
-          .rpc()
+        signature = await methodBuilder.rpc()
       }
 
       return signature

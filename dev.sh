@@ -216,6 +216,28 @@ if [ "$NETWORK" = "devnet" ]; then
 fi
 echo ""
 
+# Ensure USDC mint authority has SOL for fees/rent
+USDC_MINT_AUTHORITY_KEYPAIR="anchor/keys/usdc-mint-authority.json"
+if [ -f "$USDC_MINT_AUTHORITY_KEYPAIR" ]; then
+    USDC_MINT_AUTHORITY_PUBKEY=$(solana-keygen pubkey "$USDC_MINT_AUTHORITY_KEYPAIR")
+    USDC_AUTHORITY_BALANCE=$(solana balance "$USDC_MINT_AUTHORITY_PUBKEY" --url $RPC_URL 2>/dev/null || echo "0")
+    USDC_AUTHORITY_BALANCE_NUM=$(echo $USDC_AUTHORITY_BALANCE | cut -d' ' -f1)
+    echo -e "${CYAN}   USDC Mint Authority (${USDC_MINT_AUTHORITY_PUBKEY}) balance: ${USDC_AUTHORITY_BALANCE}${NC}"
+    if (( $(echo "$USDC_AUTHORITY_BALANCE_NUM < 1" | bc -l) )); then
+        echo -e "${YELLOW}   Funding USDC mint authority for faucet transactions...${NC}"
+        if solana airdrop 2 "$USDC_MINT_AUTHORITY_PUBKEY" --url $RPC_URL >/dev/null 2>&1; then
+            echo -e "${GREEN}✅ Mint authority funded (${USDC_MINT_AUTHORITY_PUBKEY})${NC}"
+        else
+            echo -e "${RED}❌ Failed to fund USDC mint authority. Please fund ${USDC_MINT_AUTHORITY_PUBKEY} manually.${NC}"
+        fi
+    else
+        echo -e "${GREEN}✅ USDC mint authority already funded${NC}"
+    fi
+else
+    echo -e "${YELLOW}⚠️  USDC mint authority keypair not found at ${USDC_MINT_AUTHORITY_KEYPAIR}${NC}"
+fi
+echo ""
+
 echo -e "${BLUE}📦 Deploying program to $NETWORK...${NC}"
 cd anchor
 
@@ -254,6 +276,22 @@ PROGRAM_ID=$(grep "basic =" anchor/Anchor.toml | head -1 | cut -d'"' -f2)
 echo -e "${GREEN}✅ Program deployed${NC}"
 echo -e "${CYAN}   Program ID: $PROGRAM_ID${NC}"
 echo -e "${GREEN}✅ Connected to $NETWORK ($RPC_URL)${NC}"
+echo ""
+
+# Initialize USDC mint
+echo -e "${CYAN}🪙 Initializing mock USDC...${NC}"
+cd anchor
+ANCHOR_PROVIDER_URL=$RPC_URL ANCHOR_WALLET=~/.config/solana/id.json npx ts-node scripts/init-usdc.ts
+USDC_STATUS=$?
+cd ..
+
+if [ $USDC_STATUS -ne 0 ]; then
+    echo -e "${RED}❌ USDC initialization failed${NC}"
+    if [ "$NETWORK" = "localnet" ]; then
+        kill $VALIDATOR_PID 2>/dev/null
+    fi
+    exit 1
+fi
 echo ""
 
 # Initialize platform (rewards pool, etc.)
@@ -311,9 +349,10 @@ echo "   • Network: $NETWORK"
 echo -e ""
 echo -e "${GREEN}✅ Features Available:${NC}"
 echo "   • Deal creation with social features (ratings, comments, sharing)"
-echo "   • NFT coupon minting via Metaplex"
-echo "   • Secondary marketplace (list, buy, trade coupons)"
-echo "   • Coupon staking with rewards"
+echo "   • NFT coupon minting via Metaplex (paid in USDC)"
+echo "   • Secondary marketplace (list, buy, trade coupons in USDC)"
+echo "   • Coupon staking with USDC rewards"
+echo "   • Mock USDC for realistic pricing (6 decimals, mainnet-ready)"
 if [ "$NETWORK" = "devnet" ]; then
     echo "   • Sanctum Gateway integration (optimized transactions) ✨"
 else

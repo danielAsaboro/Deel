@@ -130,6 +130,18 @@ export type Basic = {
           }
         },
         {
+          "name": "buyerUsdcAccount",
+          "writable": true
+        },
+        {
+          "name": "sellerUsdcAccount",
+          "writable": true
+        },
+        {
+          "name": "platformUsdcAccount",
+          "writable": true
+        },
+        {
           "name": "seller",
           "writable": true
         },
@@ -139,12 +151,42 @@ export type Basic = {
           "signer": true
         },
         {
-          "name": "platformWallet",
-          "writable": true
+          "name": "platformWallet"
         },
         {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claimGroupDealCoupon",
+      "discriminator": [
+        18,
+        111,
+        27,
+        41,
+        20,
+        47,
+        25,
+        197
+      ],
+      "accounts": [
+        {
+          "name": "groupDeal"
+        },
+        {
+          "name": "participant",
+          "writable": true
+        },
+        {
+          "name": "user",
+          "signer": true
         }
       ],
       "args": []
@@ -168,6 +210,35 @@ export type Basic = {
         },
         {
           "name": "rewardsPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  119,
+                  97,
+                  114,
+                  100,
+                  115,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rewardsPoolUsdcAccount",
+          "writable": true
+        },
+        {
+          "name": "stakerUsdcAccount",
           "writable": true
         },
         {
@@ -178,6 +249,10 @@ export type Basic = {
         {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         }
       ],
       "args": []
@@ -254,6 +329,102 @@ export type Basic = {
         {
           "name": "category",
           "type": "string"
+        },
+        {
+          "name": "priceLamports",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "createGroupDeal",
+      "discriminator": [
+        224,
+        6,
+        90,
+        198,
+        152,
+        131,
+        64,
+        180
+      ],
+      "accounts": [
+        {
+          "name": "deal"
+        },
+        {
+          "name": "groupDeal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  114,
+                  111,
+                  117,
+                  112,
+                  95,
+                  100,
+                  101,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "deal"
+              },
+              {
+                "kind": "account",
+                "path": "creator"
+              }
+            ]
+          }
+        },
+        {
+          "name": "creator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "targetParticipants",
+          "type": "u32"
+        },
+        {
+          "name": "tier1Threshold",
+          "type": "u32"
+        },
+        {
+          "name": "tier1Discount",
+          "type": "u8"
+        },
+        {
+          "name": "tier2Threshold",
+          "type": "u32"
+        },
+        {
+          "name": "tier2Discount",
+          "type": "u8"
+        },
+        {
+          "name": "tier3Threshold",
+          "type": "u32"
+        },
+        {
+          "name": "tier3Discount",
+          "type": "u8"
+        },
+        {
+          "name": "expiryTimestamp",
+          "type": "i64"
         },
         {
           "name": "priceLamports",
@@ -345,7 +516,137 @@ export type Basic = {
       ]
     },
     {
+      "name": "initializeUserProfile",
+      "discriminator": [
+        192,
+        144,
+        204,
+        140,
+        113,
+        25,
+        59,
+        102
+      ],
+      "accounts": [
+        {
+          "name": "userProfile",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114,
+                  95,
+                  112,
+                  114,
+                  111,
+                  102,
+                  105,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "joinGroupDeal",
+      "discriminator": [
+        37,
+        179,
+        229,
+        69,
+        250,
+        197,
+        155,
+        17
+      ],
+      "accounts": [
+        {
+          "name": "groupDeal",
+          "writable": true
+        },
+        {
+          "name": "participant",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  114,
+                  111,
+                  117,
+                  112,
+                  95,
+                  112,
+                  97,
+                  114,
+                  116,
+                  105,
+                  99,
+                  105,
+                  112,
+                  97,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "groupDeal"
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "listCoupon",
+      "docs": [
+        "List coupon for sale on secondary marketplace",
+        "",
+        "DESIGN NOTE: Uses listing_count to prevent PDA collisions.",
+        "Scenario: User lists coupon → delists → lists again",
+        "Without counter: Same PDA seeds = account already exists = error",
+        "With counter: Each listing gets unique PDA (listing #0, #1, #2, etc.)",
+        "The counter persists even after sale, allowing unlimited re-listings."
+      ],
       "discriminator": [
         136,
         133,
@@ -581,8 +882,15 @@ export type Basic = {
           "writable": true
         },
         {
-          "name": "merchant",
+          "name": "userUsdcAccount",
           "writable": true
+        },
+        {
+          "name": "merchantUsdcAccount",
+          "writable": true
+        },
+        {
+          "name": "merchant"
         },
         {
           "name": "user",
@@ -617,6 +925,159 @@ export type Basic = {
         },
         {
           "name": "metadataUri",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "mintLoyaltyBadge",
+      "discriminator": [
+        168,
+        96,
+        227,
+        110,
+        93,
+        28,
+        31,
+        64
+      ],
+      "accounts": [
+        {
+          "name": "loyaltyBadge",
+          "writable": true
+        },
+        {
+          "name": "userProfile",
+          "writable": true
+        },
+        {
+          "name": "badgeMint",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "badgeTokenAccount",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "badgeMint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associatedTokenProgram",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        }
+      ],
+      "args": [
+        {
+          "name": "badgeType",
+          "type": "u8"
+        },
+        {
+          "name": "title",
+          "type": "string"
+        },
+        {
+          "name": "description",
           "type": "string"
         }
       ]
@@ -802,6 +1263,16 @@ export type Basic = {
     },
     {
       "name": "transferCoupon",
+      "docs": [
+        "Transfer coupon ownership",
+        "",
+        "DESIGN NOTE: This updates the logical owner in the Coupon account.",
+        "The actual NFT (SPL token) transfer happens separately via token::transfer",
+        "in the frontend. This separation allows:",
+        "- On-chain business logic (redemption, listing) to check Coupon.owner",
+        "- NFTs to remain in user wallets (visible in explorers/wallets)",
+        "- Marketplace to transfer both token AND coupon ownership atomically"
+      ],
       "discriminator": [
         144,
         38,
@@ -878,6 +1349,35 @@ export type Basic = {
         },
         {
           "name": "rewardsPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  119,
+                  97,
+                  114,
+                  100,
+                  115,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rewardsPoolUsdcAccount",
+          "writable": true
+        },
+        {
+          "name": "stakerUsdcAccount",
           "writable": true
         },
         {
@@ -888,6 +1388,10 @@ export type Basic = {
         {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         }
       ],
       "args": []
@@ -987,6 +1491,32 @@ export type Basic = {
       ]
     },
     {
+      "name": "groupDeal",
+      "discriminator": [
+        251,
+        18,
+        233,
+        197,
+        54,
+        139,
+        183,
+        133
+      ]
+    },
+    {
+      "name": "groupParticipant",
+      "discriminator": [
+        219,
+        23,
+        9,
+        69,
+        193,
+        219,
+        76,
+        73
+      ]
+    },
+    {
       "name": "listing",
       "discriminator": [
         218,
@@ -997,6 +1527,19 @@ export type Basic = {
         134,
         26,
         58
+      ]
+    },
+    {
+      "name": "loyaltyBadge",
+      "discriminator": [
+        32,
+        174,
+        41,
+        70,
+        176,
+        158,
+        68,
+        69
       ]
     },
     {
@@ -1036,6 +1579,19 @@ export type Basic = {
         93,
         121,
         98
+      ]
+    },
+    {
+      "name": "userProfile",
+      "discriminator": [
+        32,
+        37,
+        119,
+        205,
+        179,
+        180,
+        13,
+        194
       ]
     }
   ],
@@ -1119,6 +1675,26 @@ export type Basic = {
       "code": 6015,
       "name": "couponStaked",
       "msg": "Coupon is currently staked and cannot be redeemed, transferred, or listed"
+    },
+    {
+      "code": 6016,
+      "name": "invalidPaymentToken",
+      "msg": "Invalid payment token - must use platform USDC"
+    },
+    {
+      "code": 6017,
+      "name": "invalidBadgeType",
+      "msg": "Invalid badge type (must be 1-4)"
+    },
+    {
+      "code": 6018,
+      "name": "invalidGroupThreshold",
+      "msg": "Invalid group threshold configuration"
+    },
+    {
+      "code": 6019,
+      "name": "groupThresholdNotMet",
+      "msg": "Group deal threshold not yet met"
     }
   ],
   "types": [
@@ -1285,6 +1861,104 @@ export type Basic = {
       }
     },
     {
+      "name": "groupDeal",
+      "docs": [
+        "Group Deal - collaborative buying with tiered discounts"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "deal",
+            "type": "pubkey"
+          },
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "targetParticipants",
+            "type": "u32"
+          },
+          {
+            "name": "currentParticipants",
+            "type": "u32"
+          },
+          {
+            "name": "tier1Discount",
+            "type": "u8"
+          },
+          {
+            "name": "tier2Discount",
+            "type": "u8"
+          },
+          {
+            "name": "tier3Discount",
+            "type": "u8"
+          },
+          {
+            "name": "tier1Threshold",
+            "type": "u32"
+          },
+          {
+            "name": "tier2Threshold",
+            "type": "u32"
+          },
+          {
+            "name": "tier3Threshold",
+            "type": "u32"
+          },
+          {
+            "name": "expiryTimestamp",
+            "type": "i64"
+          },
+          {
+            "name": "isActive",
+            "type": "bool"
+          },
+          {
+            "name": "priceLamports",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "groupParticipant",
+      "docs": [
+        "Group Deal Participant"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "groupDeal",
+            "type": "pubkey"
+          },
+          {
+            "name": "participant",
+            "type": "pubkey"
+          },
+          {
+            "name": "joinedAt",
+            "type": "i64"
+          },
+          {
+            "name": "hasClaimed",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
       "name": "listing",
       "type": {
         "kind": "struct",
@@ -1312,6 +1986,45 @@ export type Basic = {
           {
             "name": "listingNumber",
             "type": "u32"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "loyaltyBadge",
+      "docs": [
+        "Loyalty Badge - NFT achievement for user milestones"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "badgeType",
+            "type": "u8"
+          },
+          {
+            "name": "earnedAt",
+            "type": "i64"
+          },
+          {
+            "name": "title",
+            "type": "string"
+          },
+          {
+            "name": "description",
+            "type": "string"
           },
           {
             "name": "bump",
@@ -1411,6 +2124,67 @@ export type Basic = {
           }
         ]
       }
+    },
+    {
+      "name": "userProfile",
+      "docs": [
+        "User Profile - tracks user activity and achievements"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "dealsClaimed",
+            "type": "u64"
+          },
+          {
+            "name": "totalSpentLamports",
+            "type": "u64"
+          },
+          {
+            "name": "badgesEarned",
+            "type": "u32"
+          },
+          {
+            "name": "firstDealTimestamp",
+            "type": "i64"
+          },
+          {
+            "name": "lastActivityTimestamp",
+            "type": "i64"
+          },
+          {
+            "name": "totalSavingsLamports",
+            "type": "u64"
+          },
+          {
+            "name": "referralsMade",
+            "type": "u32"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ],
+  "constants": [
+    {
+      "name": "mockUsdcMint",
+      "docs": [
+        "Mock USDC mint address for devnet/localnet testing",
+        "6 decimals (matches real USDC on mainnet)",
+        "",
+        "For PRODUCTION/MAINNET: Replace with real USDC mint address:",
+        "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+      ],
+      "type": "pubkey",
+      "value": "HJbM6NHDTHuhqPMNznyrseLKzuh7w1FQe2qGUFKV5iRp"
     }
   ]
 };

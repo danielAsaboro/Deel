@@ -20,6 +20,13 @@ import {
 import { ExternalDealsResponse } from '@/types/external-deals'
 import { generateCouponMetadata, uploadMetadataToIPFS } from '@/lib/metadata-upload'
 
+// USDC mint address (configurable via environment variable)
+// Devnet/Localnet: HJbM6NHDTHuhqPMNznyrseLKzuh7w1FQe2qGUFKV5iRp
+// Mainnet: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+const USDC_MINT = new PublicKey(
+  process.env.NEXT_PUBLIC_USDC_MINT || 'HJbM6NHDTHuhqPMNznyrseLKzuh7w1FQe2qGUFKV5iRp'
+)
+
 export interface Deal {
   publicKey: PublicKey
   merchant: PublicKey
@@ -224,6 +231,29 @@ export function useDealsProgram() {
         }
       },
       enabled: !!program && !!merchant,
+      refetchOnMount: true,
+      refetchOnWindowFocus: true,
+    })
+  }
+
+  // Fetch a single deal by address
+  const useDealByAddress = (dealAddress: PublicKey) => {
+    return useQuery({
+      queryKey: ['deal', dealAddress.toString(), { cluster }],
+      queryFn: async () => {
+        try {
+          console.log('Fetching deal at address:', dealAddress.toString())
+          const deal = await program.account.deal.fetch(dealAddress)
+          return {
+            publicKey: dealAddress,
+            ...deal,
+          } as Deal
+        } catch (error) {
+          console.error('Error fetching deal:', error)
+          return null
+        }
+      },
+      enabled: !!program && !!dealAddress,
       refetchOnMount: true,
       refetchOnWindowFocus: true,
     })
@@ -459,9 +489,19 @@ export function useDealsProgram() {
 
       return signature
     },
-    onSuccess: (signature) => {
+    onSuccess: (signature, { dealAddress }) => {
       transactionToast(signature)
       queryClient.invalidateQueries({ queryKey: ['deals'] })
+      if (dealAddress) {
+        const dealKey = dealAddress.toString()
+        queryClient.invalidateQueries({
+          predicate: (query) => {
+            if (!Array.isArray(query.queryKey)) return false
+            const [keyRoot, keyAddress] = query.queryKey as unknown[]
+            return keyRoot === 'deal' && keyAddress === dealKey
+          },
+        })
+      }
     },
     onError: (error) => {
       toast.error(`Failed to update deal: ${error}`)
@@ -524,6 +564,17 @@ export function useDealsProgram() {
         TOKEN_METADATA_PROGRAM_ID
       )
 
+      // Derive USDC token accounts for payment
+      const userUsdcAccount = getAssociatedTokenAddressSync(
+        USDC_MINT,
+        publicKey
+      )
+
+      const merchantUsdcAccount = getAssociatedTokenAddressSync(
+        USDC_MINT,
+        dealAccount.merchant
+      )
+
       let signature: string
 
       // Check if Gateway is enabled
@@ -536,6 +587,8 @@ export function useDealsProgram() {
             mint: mintKeypair.publicKey,
             tokenAccount: userTokenAccount,
             metadata: metadataPda,
+            userUsdcAccount,
+            merchantUsdcAccount,
             merchant: dealAccount.merchant,
             user: publicKey,
             rent: SYSVAR_RENT_PUBKEY,
@@ -568,6 +621,8 @@ export function useDealsProgram() {
             mint: mintKeypair.publicKey,
             tokenAccount: userTokenAccount,
             metadata: metadataPda,
+            userUsdcAccount,
+            merchantUsdcAccount,
             merchant: dealAccount.merchant,
             user: publicKey,
             rent: SYSVAR_RENT_PUBKEY,
@@ -934,6 +989,7 @@ export function useDealsProgram() {
     programId,
     deals,
     useDealsByMerchant,
+    useDealByAddress,
     createDeal,
     updateDeal,
     mintCoupon,

@@ -9,10 +9,10 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { useUsdcPrice } from '@/hooks/use-usdc-price'
 
 export function RewardsPoolInfo({ pool }: { pool: RewardsPool }) {
-  const { lamportsToUsdc } = useUsdcPrice()
+  const { baseUnitsToUsdc } = useUsdcPrice()
 
   const formatUSDC = (lamports: number) => {
-    return lamportsToUsdc(lamports).toFixed(2)
+    return baseUnitsToUsdc(lamports).toFixed(2)
   }
 
   return (
@@ -59,10 +59,10 @@ export function StakingCouponsManager({
   onClaim: (stakedCouponPubkey: PublicKey) => void
   isLoading: boolean
 }) {
-  const { lamportsToUsdc } = useUsdcPrice()
+  const { baseUnitsToUsdc } = useUsdcPrice()
 
   const formatUSDC = (lamports: number) => {
-    return lamportsToUsdc(lamports).toFixed(2)
+    return baseUnitsToUsdc(lamports).toFixed(2)
   }
 
   const formatTimeStaked = (stakedAt: number) => {
